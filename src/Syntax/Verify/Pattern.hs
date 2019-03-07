@@ -187,20 +187,20 @@ data AbsState
   = AbsState
   { altSub :: SolveState
   , altTyc :: Seq.Seq (Constraint Typed)
-  , altFresh :: VarResolved
+  , altFresh :: Ident
   }
   deriving (Show)
 
 -- | Construct an empty pattern abstraction state from a fresh variable,
-emptyAbsState :: Var Typed -> AbsState
+emptyAbsState :: Ident -> AbsState
 emptyAbsState = AbsState emptyState mempty
 
 -- | Construct an empty value abstraction from a abstraction state and
 -- the type of the test variable.
 emptyAlt :: AbsState -> Type Typed -> (AbsState, ValueAbs Typed)
 emptyAlt alt ty =
-  let v@(TgName _ i) = altFresh alt
-  in (alt { altFresh = TgName "a" (i + 1) }, VVariable v ty)
+  let v@(Ident _ i) = altFresh alt
+  in (alt { altFresh = Ident "a" (i + 1) }, VVariable (TgName v) ty)
 
 -- | A type-safe list of constraints between patterns and value
 -- abstractions.

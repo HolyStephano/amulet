@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, OverloadedStrings, TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, OverloadedStrings, TypeFamilies, TupleSections #-}
 
 {- | The desugar process is run before the type checker in order to
    simplify the number of cases it needs to handle.
@@ -30,15 +30,31 @@ desugarProgram :: forall m. MonadNamey m => [Toplevel Resolved] -> m [Toplevel D
 desugarProgram = traverse statement where
   statement :: Toplevel Resolved -> m (Toplevel Desugared)
   statement (LetStmt am vs) = LetStmt am <$> traverse binding vs
-  statement (Module am v ss) = Module am v <$> traverse statement ss
+  statement (Module am v ss) = Module am v <$> modTerm ss
   statement (Instance a b c m d) = Instance a (ty <$> b) (ty c) <$> traverse binding m <*> pure d
   statement (Class am a b c m d) = Class am a (ty <$> b) (tyA <$> c) <$> traverse classItem m <*> pure d
-  statement (Open v a) = pure $ Open v a
+  statement (Open am v) = Open am <$> modTerm v
   statement (ForeignVal am v x t a) = pure $ ForeignVal am v x (ty t) a
   statement (TypeDecl am v arg cs) = pure $ TypeDecl am v (map tyA arg) (map ctor cs)
 
   classItem (MethodSig v t a) = pure $ MethodSig v (ty t) a
   classItem (DefaultMethod m a) = DefaultMethod <$> binding m <*> pure a
+
+  modTerm :: ModuleTerm Resolved -> m (ModuleTerm Desugared)
+  modTerm (ModName v) = pure (ModName v)
+  modTerm (ModStruct ss) = ModStruct <$> traverse statement ss
+  modTerm (ModFunctor v arg bod) = ModFunctor v (modTy arg) <$> modTerm bod
+  modTerm (ModApply f x) = ModApply <$> modTerm f <*> modTerm x
+  modTerm (ModConstraint term ty) = ModConstraint <$> modTerm term <*> pure (modTy ty)
+
+  modTy :: ModuleType Resolved -> ModuleType Desugared
+  modTy (Signature sig) = Signature (map topSpec sig)
+  modTy (Functor v arg bod) = Functor v (modTy arg) (modTy bod)
+
+  topSpec :: TopSpec Resolved -> TopSpec Desugared
+  topSpec (ValSig vs) = ValSig (map (second ty) vs)
+  topSpec (TypeSig v arg cs) = TypeSig v (map tyA arg) (map ctor cs)
+  topSpec (ModuleSig var ty) = ModuleSig var (modTy ty)
 
   expr :: Expr Resolved -> m (Expr Desugared)
   expr (Literal l a) = pure (Literal l a)
@@ -120,7 +136,6 @@ desugarProgram = traverse statement where
     pure (as, (v, e):vs, ref:tuple)
 
   binding (Binding v e c a) = Binding v <$> expr e <*> pure c <*> pure a
-
   binding (Matching (Capture v _) e a) =
     Binding v <$> expr e <*> pure True <*> pure a
   binding (Matching (PType p t _) e a) = binding (Matching p (Ascription e t (annotation e)) a)

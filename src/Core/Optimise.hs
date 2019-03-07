@@ -233,7 +233,7 @@ freshFrom' x = fromVar <$> freshFrom (toVar x)
 -- | Create a fresh 'CoVar'
 fresh :: MonadNamey m => VarInfo -> m CoVar
 fresh k = do
-  ~(TgName nam x) <- genName
+  ~(Ident nam x) <- genIdent
   pure (CoVar x nam k)
 
 -- | Create a fresh variable

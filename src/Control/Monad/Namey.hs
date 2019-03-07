@@ -14,7 +14,7 @@ module Control.Monad.Namey
   ( NameyT, runNameyT, evalNameyT
   , Namey, runNamey, evalNamey
   , MonadNamey(..)
-  , genAlnum
+  , genAlnum, genName, genNameUsing
   ) where
 
 import qualified Control.Monad.Writer.Strict as StrictW
@@ -68,69 +68,65 @@ instance MonadState s m => MonadState s (NameyT m) where
 -- | A source of fresh variable names
 class Monad m => MonadNamey m where
   -- | Get a fresh variable
-  genName :: m Name
+  genIdent :: m Ident
 
 -- | Run the namey monad transformer with some starting name, returning
 -- the result of the computation and the next name to generate.
-runNameyT :: Functor m => NameyT m a -> Name -> m (a, Name)
-runNameyT (NameyT k) (TgName _ i) = second genVar <$> StrictS.runStateT k i where
-  genVar x = TgName (genAlnum x) x
-runNameyT _ _ = undefined
+runNameyT :: Functor m => NameyT m a -> Ident -> m (a, Ident)
+runNameyT (NameyT k) (Ident _ i) = second genVar <$> StrictS.runStateT k i where
+  genVar x = Ident (genAlnum x) x
 
 -- | Run the namey monad transformer with some starting name, returning
 -- the result of the computation.
-evalNameyT :: Monad m => NameyT m a -> Name -> m a
-evalNameyT (NameyT k) (TgName _ i) = StrictS.evalStateT k i
-evalNameyT _ _ = undefined
+evalNameyT :: Monad m => NameyT m a -> Ident -> m a
+evalNameyT (NameyT k) (Ident _ i) = StrictS.evalStateT k i
 
 -- | Run the namey monad with some starting name, returning the result of
 -- the computation and the next name to generate.
-runNamey :: NameyT Identity a -> Name -> (a, Name)
-runNamey (NameyT k) (TgName _ i) = second genVar $ StrictS.runState k i where
-  genVar x = TgName (genAlnum x) x
-runNamey _ _ = undefined
+runNamey :: NameyT Identity a -> Ident -> (a, Ident)
+runNamey (NameyT k) (Ident _ i) = second genVar $ StrictS.runState k i where
+  genVar x = Ident (genAlnum x) x
 
 -- | Run the namey monad with some starting name, returning the result of
 -- the computation.
-evalNamey :: NameyT Identity a -> Name -> a
-evalNamey (NameyT k) (TgName _ i) = StrictS.evalState k i
-evalNamey _ _ = undefined
+evalNamey :: NameyT Identity a -> Ident -> a
+evalNamey (NameyT k) (Ident _ i) = StrictS.evalState k i
 
 instance Monad m => MonadNamey (NameyT m) where
-  genName = NameyT $ do
+  genIdent = NameyT $ do
     x <- get
     put (x + 1)
-    pure (TgName (genAlnum x) x)
+    pure (Ident (genAlnum x) x)
 
 instance MonadNamey m => MonadNamey (ContT r m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance MonadNamey m => MonadNamey (StrictS.StateT s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance MonadNamey m => MonadNamey (LazyS.StateT s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance (MonadNamey m, Monoid s) => MonadNamey (StrictW.WriterT s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance (MonadNamey m, Monoid s) => MonadNamey (LazyW.WriterT s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance MonadNamey m => MonadNamey (ExceptT e m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance MonadNamey m => MonadNamey (Reader.ReaderT e m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance (Semigroup c, MonadNamey m) => MonadNamey (Chronicle.ChronicleT c m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance (MonadNamey m, Monoid w) => MonadNamey (StrictRWS.RWST r w s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 instance (MonadNamey m, Monoid w) => MonadNamey (LazyRWS.RWST r w s m) where
-  genName = lift genName
+  genIdent = lift genIdent
 
 -- | Generate an lowercase letter-based representation of a integer
 -- identifier. This is used to generate slightly more readable variable
@@ -146,3 +142,13 @@ genAlnum n = go (fromIntegral n) T.empty (floor (logBase 26 (fromIntegral n :: D
               0 -> 1
               x -> x
      in go (n `mod'` (26 ^ p)) (T.snoc out (chr (96 + m))) (p - 1)
+
+-- | Generate a random 'TgName'
+genName :: MonadNamey m => m Name
+genName = TgName <$> genIdent
+
+-- | Generate a random 'TgName' and provide a custom name.
+genNameUsing :: MonadNamey m => (T.Text -> T.Text) -> m Name
+genNameUsing f = do
+  Ident n i <- genIdent
+  pure $ TgName (Ident (f n) i)

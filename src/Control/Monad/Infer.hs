@@ -204,17 +204,13 @@ runInfer ct ac = over here toList <$>
   runChronicleT (runWriterT (runReaderT ac ct))
 
 genNameFrom :: MonadNamey m => Text -> m (Var Desugared)
-genNameFrom t = do
-  ~(TgName _ n) <- genName
-  pure (TgName t n)
+genNameFrom t = genNameUsing (const t)
 
 genNameWith :: MonadNamey m => Text -> m (Var Desugared)
-genNameWith t = do
-  ~(TgName e n) <- genName
-  pure (TgName (t <> e) n)
+genNameWith t = genNameUsing (t<>)
 
-firstName :: Var Desugared
-firstName = TgName "a" 0
+firstName :: Ident
+firstName = Ident "a" 0
 
 instantiate :: MonadNamey m
             => InstLevel
@@ -275,7 +271,7 @@ refreshTV :: MonadNamey m => Var Typed -> m (Type Typed)
 refreshTV v = TyVar <$> genNameFrom nm where
   nm = case v of
     TgInternal x -> x
-    TgName x _ -> x
+    TgName (Ident x _) -> x
 
 instance Pretty TypeError where
   pretty NotEqual{ expected, actual } =

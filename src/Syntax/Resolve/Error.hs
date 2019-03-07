@@ -10,6 +10,7 @@ import qualified Data.Text as T
 import Data.Spanned
 import Data.Reason
 import Data.Maybe
+import Data.Span
 
 import Syntax
 
@@ -32,6 +33,9 @@ data ResolveError
   | Ambiguous (Var Parsed) [Var Resolved] -- ^ This reference could refer to more than one variable
   | NonLinearPattern (Var Resolved) [Pattern Resolved] -- ^ This pattern declares one variable multiple times
   | NonLinearRecord (Expr Parsed) T.Text -- ^ This record declares an entry multiple times
+
+  | ModuleNonFunctor (ModuleType Typed) (ModuleTerm Resolved)
+  | ModuleMismatch (ModuleType Typed) (Var Parsed)
 
   | EmptyMatch -- ^ This @match@ has no patterns
   | EmptyBegin -- ^ This @begin@ block has no expressions
@@ -66,12 +70,12 @@ instance Pretty ResolveError where
 instance Spanned ResolveError where
   annotation (ArisingFrom _ x) = annotation x
   annotation (NonLinearRecord e _) = annotation e
-  annotation x = error (show x)
+  annotation _ = internal
 
 instance Note ResolveError Style where
   diagnosticKind _ = ErrorMessage
 
-  formatNote f x = indent 2 (Right <$> pretty x) <#> fromJust (body x) where
+  formatNote f x = indent 2 (Right <$> pretty x) <#> fromMaybe mempty (body x) where
     body (ArisingFrom er a) = body er <|> Just (f [annotation a])
     body (NonLinearPattern _ ps) = Just (f (map annotation ps))
     body (NonLinearRecord e _) = Just (f [annotation e])

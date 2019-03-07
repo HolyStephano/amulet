@@ -101,7 +101,7 @@ inferClass clss@(Class name _ ctx _ methods classAnn) = do
         impty <- silence $
           closeOver' vars (BecauseOf clss) $
             TyPi (Implicit classConstraint) obligation
-        ~var@(TgName name _) <- genNameWith (classCon' <> T.singleton '$')
+        ~var@(TgName (Ident name _)) <- genNameWith (classCon' <> T.singleton '$')
         pure ( singleton classAnn Superclass var impty
              , (Implicit, var, name, obligation))
 
@@ -505,7 +505,7 @@ deSkolFreeTy = transformType go where
 
 nameName :: Var Desugared -> T.Text
 nameName (TgInternal x) = x
-nameName (TgName x _) = x
+nameName (TgName (Ident x _)) = x
 
 entails :: ImplicitScope Typed -> Obligation Typed -> Bool
 entails _ (Quantifier _) = True

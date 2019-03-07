@@ -78,7 +78,6 @@ fixupType o = o
 -- table.
 precedenceOf :: (T.Text -> (Int, Associativity)) -> Var Parsed -> (Int, Associativity)
 precedenceOf f (Name n) = f n
-precedenceOf f (InModule _ n) = precedenceOf f n
 
 -- | The default precedence "table", used by expressions and (mostly) by
 -- types.

@@ -9,7 +9,6 @@
 -}
 module Syntax.Var where
 
-import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Data
 
@@ -26,7 +25,7 @@ newtype Parsed = Parsed Parsed deriving Data
 -- during desugaring.
 --
 -- We do not provide any additional annotations, but do uniquify
--- variables, effectively eliminating the concept of modules.
+-- variables.
 newtype Resolved = Resolved Resolved deriving Data
 
 -- | The desugared phrase is used after we have resolved variables and
@@ -55,43 +54,32 @@ type family Var p :: * where
 
 -- | Parsed variables are little more than identifiers: they do not have
 -- a concept of scope.
-data VarParsed
-  = Name Text -- ^ An unqualified identifier
-  | InModule Text VarParsed -- ^ An identifier in a module
+newtype VarParsed = Name Text
   deriving (Eq, Show, Ord, Data)
 
-instance Semigroup VarParsed where
-  (Name t) <> v = InModule t v
-  (InModule m n) <> v = InModule m (n <> v)
-
--- | A resolved variable. These no longer keep track of which module they
--- belong to, and thus simply hold a 'T.Text' value.
-data VarResolved
-  = TgName Text {-# UNPACK #-} !Int -- ^ A user-defined name
-  | TgInternal Text -- ^ A variable provided by the compiler
+-- | A unique identifier, used by resolved variables.
+data Ident = Ident Text {-# UNPACK #-} !Int
   deriving (Show, Data)
 
-instance Semigroup VarResolved where
-  _ <> x@(TgInternal _) = x
-  (TgInternal x) <> (TgName y i) = TgName (T.concat [x, T.pack ".", y]) i
-  (TgName x _) <> (TgName y i) = TgName (T.concat [x, T.pack ".", y]) i
+instance Eq Ident where
+  Ident _ x == Ident  _ y = x == y
 
-instance Eq VarResolved where
-  (TgName _ a) == (TgName _ b) = a == b
-  (TgInternal a) == (TgInternal b) = a == b
-  _ == _ = False
+instance Ord Ident where
+  Ident _ x `compare` Ident _ y = x `compare` y
 
-instance Ord VarResolved where
-  (TgName _ a) `compare` (TgName _ b) = a `compare` b
-  (TgInternal a) `compare` (TgInternal b) = a `compare` b
-
-  (TgName _ _) `compare` (TgInternal _) = GT
-  (TgInternal _) `compare` (TgName _ _) = LT
+-- | A resolved variable. These no longer keep track of which module they
+-- belong to, and thus simply hold a 'Text' value.
+data VarResolved
+  = TgName !Ident -- ^ A user-defined name
+  | TgInternal Text -- ^ A variable provided by the compiler
+  deriving (Data, Eq, Show, Ord)
 
 instance Pretty VarParsed where
   pretty (Name v) = text v
-  pretty (InModule t v) = text t <> dot <> pretty v
+
+instance Pretty Ident where
+  pretty (Ident v i) = text v <> scomment (string "#" <> string (show i))
 
 instance Pretty VarResolved where
-  pretty (TgName v i) = text v <> scomment (string "#" <> string (show i))
+  pretty (TgName n) = pretty n
   pretty (TgInternal v) = text v

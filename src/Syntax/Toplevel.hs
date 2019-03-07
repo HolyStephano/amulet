@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable, FlexibleContexts, FlexibleInstances
-  , PatternSynonyms, StandaloneDeriving, TemplateHaskell, TypeFamilies
-  , UndecidableInstances #-}
+  , OverloadedStrings, PatternSynonyms, StandaloneDeriving, TemplateHaskell
+  , TypeFamilies, UndecidableInstances #-}
 
 -- | The core types to represent top level statements within Amulet's syntax.
 module Syntax.Toplevel where
@@ -22,17 +22,55 @@ import Syntax.Type
 import Syntax.Expr
 import Syntax.Var
 
--- | An accessibility modifier of a top-level declaration
+-- | A module type
+data ModuleType p
+  = Signature [TopSpec p] -- ^ @sig ... end@
+  | Functor (Var p) (ModuleType p) (ModuleType p) -- ^ @functor (X : Y) ...@
+
+deriving instance (Eq (Var p), Eq (Ann p)) => Eq (ModuleType p)
+deriving instance (Show (Var p), Show (Ann p)) => Show (ModuleType p)
+deriving instance (Ord (Var p), Ord (Ann p)) => Ord (ModuleType p)
+deriving instance (Data p, Typeable p, Data (Var p), Data (Ann p)) => Data (ModuleType p)
+
+-- | A specification of a top-level element, used for module types.
+data TopSpec p
+  = ValSig [(Var p, Type p)]
+    -- ^ A type assignment for one or more variables
+  | TypeSig (Var p) [TyConArg p] [Constructor p]
+    -- ^ A type definition, potentially abstract.
+  | ModuleSig (Var p) (ModuleType p)
+    -- ^ A nested module signature
+
+deriving instance (Eq (Var p), Eq (Ann p)) => Eq (TopSpec p)
+deriving instance (Show (Var p), Show (Ann p)) => Show (TopSpec p)
+deriving instance (Ord (Var p), Ord (Ann p)) => Ord (TopSpec p)
+deriving instance (Data p, Typeable p, Data (Var p), Data (Ann p)) => Data (TopSpec p)
+
+-- | A term in the module language
+data ModuleTerm p
+  = ModName (Var p) -- ^ @X@
+  | ModStruct [Toplevel p]  -- ^ @struct ... end@
+  | ModFunctor (Var p) (ModuleType p) (ModuleTerm p) -- ^@functor (X : Y) ...@
+  | ModApply (ModuleTerm p) (ModuleTerm p) -- ^ @X Y@
+  | ModConstraint (ModuleTerm p) (ModuleType p) -- ^ @(X : Y)@
+
+deriving instance (Eq (Var p), Eq (Ann p)) => Eq (ModuleTerm p)
+deriving instance (Show (Var p), Show (Ann p)) => Show (ModuleTerm p)
+deriving instance (Ord (Var p), Ord (Ann p)) => Ord (ModuleTerm p)
+deriving instance (Data p, Typeable p, Data (Var p), Data (Ann p)) => Data (ModuleTerm p)
+
+-- | An accessibility modifier of a top-level declaration. This is simply
+-- an alternative way to specify the signature of this module.
 data TopAccess = Public | Private
   deriving (Eq, Ord, Show, Data)
 
+-- | An instance of a top-level element, used for module instances.
 data Toplevel p
   = LetStmt TopAccess [Binding p]
   | ForeignVal TopAccess (Var p) Text (Type p) (Ann p)
   | TypeDecl TopAccess (Var p) [TyConArg p] [Constructor p]
-  | Module TopAccess (Var p) [Toplevel p]
-  | Open { openName :: Var p
-         , openAs :: Maybe Text }
+  | Module TopAccess (Var p) (ModuleTerm p)
+  | Open { openExpose :: TopAccess, openMod :: ModuleTerm p }
   | Class { className :: Var p
           , classAccess :: TopAccess
           , classCtx :: Maybe (Type p)
@@ -94,6 +132,42 @@ instance (Spanned (Constructor p), Spanned (Ann p)) => Spanned (Toplevel p) wher
 instance Spanned (Ann p) => Spanned (ClassItem p) where
   annotation = annotation . view methAnn
 
+instance Pretty (Var p) => Pretty (ModuleType p) where
+  pretty (Signature bod) =
+    vsep [ keyword "sig"
+         , indent 2 (vsep (map pretty bod))
+         , keyword "end"
+         ]
+
+  pretty (Functor v ty bod) =
+    keyword "functor" <+> parens (pretty v <+> colon <+> pretty ty) <+> pretty bod
+
+instance Pretty (Var p) => Pretty (TopSpec p) where
+  pretty (ValSig []) = keyword "val <<malformed>>"
+  pretty (ValSig (x:xs)) =
+    vsep (keyword "val" <+> pair x:map ((keyword "and"<+>) . pair) xs) where
+    pair (x, y) = pretty x <+> colon <+> pretty y
+
+  pretty (TypeSig ty args []) = keyword "type" <+> pretty ty <+> hsep (map ((squote <>) . pretty) args)
+  pretty (TypeSig ty args ctors) = keyword "type" <+> pretty ty
+                               <+> hsep (map ((squote <>) . pretty) args)
+                               <+> equals
+                               <#> indent 2 (vsep (map ((pipe <+>) . pretty) ctors))
+
+  pretty (ModuleSig n m) = keyword "module" <+> pretty n <+> " = " <+> pretty m
+
+instance Pretty (Var p) => Pretty (ModuleTerm p) where
+  pretty (ModName v) = pretty v
+  pretty (ModStruct bod) =
+    vsep [ keyword "begin"
+         , indent 2 (vsep (map pretty bod))
+         , keyword "end"
+         ]
+  pretty (ModFunctor v ty bod) =
+    keyword "functor" <+> parens (pretty v <+> colon <+> pretty ty) <+> pretty bod
+  pretty (ModApply x y) = pretty x <+> pretty y
+  pretty (ModConstraint x y) = pretty x <+> colon <+> pretty y
+
 instance Pretty (Var p) => Pretty (ClassItem p) where
   pretty (MethodSig v t _) = keyword "val" <+> pretty v <+> colon <+> pretty t
   pretty (DefaultMethod b _) = keyword "let" <+> pretty b
@@ -122,14 +196,10 @@ instance (Pretty (Var p)) => Pretty (Toplevel p) where
                                 <+> equals
                                 <#> indent 2 (vsep (map ((pipe <+>) . pretty) ctors))
 
-  pretty (Open m Nothing) = keyword "open" <+> pretty m
-  pretty (Open m (Just a)) = keyword "open" <+> pretty m <+> keyword "as" <+> text a
+  pretty (Open Public m) = keyword "open" <+> pretty m
+  pretty (Open Private m) = keyword "include" <+> pretty m
 
-  pretty (Module am m bod) =
-    vsep [ keyword "module" <+> prettyAcc am <> pretty m <+> equals <+> keyword "begin"
-         , indent 2 (align (pretty bod))
-         , keyword "end"
-         ]
+  pretty (Module am m bod) = keyword "module" <+> prettyAcc am <> pretty m <+> equals <+> pretty bod
 
   pretty (Class v am c h m _) =
     vsep [ keyword "class" <+> prettyAcc am <> maybe (parens mempty) pretty c

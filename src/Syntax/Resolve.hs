@@ -26,18 +26,17 @@ module Syntax.Resolve
   , VarKind(..)
   ) where
 
+import Control.Lens hiding (Lazy, Context)
 import Control.Monad.Chronicles
 import Control.Monad.Reader
-import Control.Applicative
-import Control.Monad.State
 import Control.Monad.Namey
-import Control.Lens hiding (Lazy)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Traversable
 import Data.Sequence (Seq)
+import Data.Bifunctor
 import Data.Foldable
 import Data.Function
 import Data.Functor
@@ -47,7 +46,6 @@ import Data.Maybe
 import Data.These
 import Data.List
 
-import Syntax.Resolve.Toplevel
 import Syntax.Resolve.Scope
 import Syntax.Resolve.Error
 import Syntax.Subst
@@ -56,113 +54,129 @@ import Syntax
 import Parser.Unicode
 
 type MonadResolve m = ( MonadChronicles ResolveError m
-                      , MonadReader Scope m
-                      , MonadNamey m
-                      , MonadState ModuleScope m)
+                      , MonadReader Context m
+                      , MonadNamey m )
 
 -- | Resolve a program within a given 'Scope' and 'ModuleScope'
 resolveProgram :: MonadNamey m
-               => Scope -- ^ The scope in which to resolve this program
-               -> ModuleScope
+               => Environment -- ^ The scope in which to resolve this program
                -- ^ The current module scope. We return an updated
                -- version of this if we declare or extend any modules.
                -> [Toplevel Parsed] -- ^ The program to resolve
-               -> m (Either [ResolveError] ([Toplevel Resolved], ModuleScope))
+               -> m (Either [ResolveError] ([Toplevel Resolved], Environment))
                -- ^ The resolved program or a list of resolution errors
-resolveProgram scope modules = runResolve scope modules . resolveModule
+resolveProgram scope = runResolve scope
+                     . flip resolveToplevel scope
 
 -- | Run the resolver monad.
 runResolve :: MonadNamey m
-           => Scope -- ^ The initial state to resolve objects in
-           -> ModuleScope -- ^ The scope for modules
-           -> StateT ModuleScope (ReaderT Scope (ChronicleT (Seq ResolveError) m)) a
-           -> m (Either [ResolveError] (a, ModuleScope))
-runResolve scope modules
+           => Environment -- ^ The initial state to resolve objects in
+           -> ReaderT Context (ChronicleT (Seq ResolveError) m) a
+           -> m (Either [ResolveError] a)
+runResolve scope
   = (these (Left . toList) Right (\x _ -> Left (toList x))<$>)
-  . runChronicleT . flip runReaderT scope . flip runStateT modules
+  . runChronicleT . flip runReaderT (Context scope mempty)
+
+
+lookupIn :: MonadResolve m
+         => (Environment -> Map.Map VarName a)
+         -> Var Parsed -> VarKind -> Environment
+         -> m a
+lookupIn g v@(Name n) k env =
+  case Map.lookup n (g env) of
+    Nothing -> confesses (NotInScope k v [])
+    Just x -> pure x
+
+lookupSlot :: MonadResolve m
+          => Var Parsed -> EnvSlot (Var Resolved)
+          -> m (Var Resolved)
+lookupSlot v slot =
+  case slot of
+    EAmbiguous vs -> confesses (Ambiguous v vs)
+    EKnown x -> pure x
+
+lookupEx :: MonadResolve m => Var Parsed -> m (Var Resolved)
+lookupEx v = view env
+         >>= lookupIn (^.envValues) v (if isCtorVar v then VarCtor else VarVar)
+         >>= lookupSlot v
+
+lookupTy :: MonadResolve m => Var Parsed -> m (Var Resolved)
+lookupTy v = view env
+         >>= lookupIn (^.envTypes) v (if isCtorVar v then VarCtor else VarType)
+
+lookupMod :: MonadResolve m => Var Parsed -> m (Var Resolved, ModuleEnvironment)
+lookupMod v = view env >>= lookupIn (^.envModules) v VarModule
+
+lookupTyvar :: MonadResolve m => Var Parsed -> m (Var Resolved)
+lookupTyvar v@(Name n) = do
+  s <- view typeVars
+  case Map.lookup n s of
+    Nothing -> confesses (NotInScope VarTyvar v [])
+    Just x -> lookupSlot v x
 
 -- | Resolve the whole program
-resolveModule :: MonadResolve m => [Toplevel Parsed] -> m [Toplevel Resolved]
-resolveModule [] = pure []
+resolveToplevel :: MonadResolve m
+              => [Toplevel Parsed] -> Environment
+              -> m ([Toplevel Resolved], Environment)
+resolveToplevel [] env = pure ([], env)
 
-resolveModule (LetStmt am bs:rs) = do
+resolveToplevel (LetStmt am bs:rs) env = do
   (bs', vs, ts) <- unzip3 <$> traverse reBinding bs
-  extendTyvarN (concat ts) . extendN (concat vs) $ (:)
-    <$> (LetStmt am <$> traverse (uncurry (flip (<$>) . reExpr . view bindBody)) (zip bs bs'))
-    <*> resolveModule rs
+  doTop rs env am (withValues (concat vs)) $ extendTyvars (concat ts) $
+    LetStmt am <$> traverse (uncurry (flip (<$>) . reExpr . view bindBody)) (zip bs bs')
 
-resolveModule (r@(ForeignVal am v t ty a):rs) = do
+resolveToplevel (r@(ForeignVal am v t ty a):rs) env = do
   v' <- tagVar v
-  extend (v, v') $ (:)
-    <$> (ForeignVal am
-          <$> lookupEx v `catchJunk` r
-          <*> pure t
-          <*> reType r (wrap ty)
-          <*> pure a)
-    <*> resolveModule rs
+  doTop rs env am (envValues %~ Map.insert (varName v) (EKnown v')) $
+    ForeignVal am
+      <$> lookupEx v `catchJunk` r
+      <*> pure t
+      <*> reType r (wrap ty)
+      <*> pure a
 
   where wrap x = foldr (TyPi . flip (flip Invisible Nothing) Spec) x (toList (ftv x))
-resolveModule (d@(TypeDecl am t vs cs):rs) = do
+resolveToplevel (d@(TypeDecl am t vs cs):rs) env = do
   t'  <- tagVar t
   (vs', sc) <- resolveTele d vs
   let c = map extractCons cs
   c' <- traverse tagVar c
-  extendTy (t, t') $ extendN (zip c c') $ (:)
-    . TypeDecl am t' vs'
-    <$> traverse (resolveCons sc) (zip cs c')
-    <*> resolveModule rs
+  doTop rs env am ((envTypes %~ Map.insert (varName t) t') . withValues (zip c c')) $
+    TypeDecl am t' vs' <$> traverse (resolveCons sc) (zip cs c')
 
   where resolveCons _ (UnitCon ac _ a, v') = pure $ UnitCon ac v' a
-        resolveCons vs (r@(ArgCon ac _ t a), v') = ArgCon ac v' <$> extendTyvarN vs (reType r t) <*> pure a
+        resolveCons vs (r@(ArgCon ac _ t a), v') = ArgCon ac v' <$> extendTyvars vs (reType r t) <*> pure a
         resolveCons _  (r@(GadtCon ac _ t a), v') = do
           let fvs = toList (ftv t)
           fresh <- traverse tagVar fvs
-          t' <- extendTyvarN (zip fvs fresh) (reType r t)
+          t' <- extendTyvars (zip fvs fresh) (reType r t)
           pure (GadtCon ac v' t' a)
 
         extractCons (UnitCon _ v _) = v
         extractCons (ArgCon _ v _ _) = v
         extractCons (GadtCon _ v _ _) = v
 
-resolveModule (r@(Open name as):rs) =
-  -- Opens hard-fail, as anything inside it will probably fail to resolve
-  retcons (wrapError r) $
-    resolveOpen name as (\name' -> (Open name' as:) <$> resolveModule rs)
+resolveToplevel (Module am name mod:rs) env' = do
+  (mod', mEnv) <- resolveModTerm mod
+  name' <- tagVar name
+  doTop rs env' am (envModules %~ Map.insert (varName name) (name', EnvModule $ prefixEnv name' mEnv)) $
+    pure $ Module am name' mod'
 
-resolveModule (Module am name body:rs) = do
-  fullName <- foldl (flip InModule) name <$> asks modStack
-  body' <- extendM name $ resolveModule body
+resolveToplevel (Open am body:rs) env' = do
+  (mod', mEnv) <- resolveModTerm body
+  doTop rs env' am (mEnv<>) . pure $ Open am mod'
 
-  let (vars, tys) = extractToplevels body
-  let (vars', tys') = extractToplevels body'
-
-  (ModuleScope modules) <- get
-  (name', scope) <- case Map.lookup fullName modules of
-                      Just env -> pure env
-                      Nothing -> (,emptyScope) <$> tagModule fullName
-
-  let scope' = scope { varScope = foldr (uncurry Map.insert) (varScope scope) (zip vars (map SVar vars'))
-                     , tyScope  = foldr (uncurry Map.insert) (tyScope scope) (zip tys (map SVar tys')) }
-  put $ ModuleScope $ Map.insert fullName (name', scope') modules
-
-  extendN (modZip name name' vars vars') $ extendTyN (modZip name name' tys tys') $ (:)
-    <$> pure (Module am name' body')
-    <*> resolveModule rs
-
-  where modZip name name' v v' = zip (map (name<>) v) (map (name'<>) v')
-
-resolveModule (t@(Class name am ctx tvs ms ann):rs) = do
+resolveToplevel (t@(Class name am ctx tvs ms ann):rs) env' = do
   name' <- tagVar name
   (tvs', tvss) <- resolveTele t tvs
 
-  extendTy (name, name') $ do
-    (ctx', (ms', vs')) <- extendTyvarN tvss $
+  (ctx', (ms', vs')) <- extendTyvars tvss $ local (env . envTypes %~ Map.insert (varName name) name') $
       (,) <$> traverse (reType t) ctx
           <*> (unzip <$> traverse (reClassItem (map fst tvss)) ms)
 
-    extendN (mconcat vs') $ do
-      ms'' <- extendTyvarN tvss (sequence ms')
-      (Class name' am ctx' tvs' ms'' ann:) <$> resolveModule rs
+
+  doTop rs env' am ((envTypes %~ Map.insert (varName name) name') . withValues (mconcat vs')) $ do
+    ms'' <- extendTyvars tvss (sequence ms')
+    pure $ Class name' am ctx' tvs' ms'' ann
 
   where
     reClassItem tvs' m@(MethodSig name ty an) = do
@@ -174,39 +188,31 @@ resolveModule (t@(Class name am ctx tvs ms ann):rs) = do
            , [] )
     wrap tvs' x = foldr (TyPi . flip (flip Invisible Nothing) Spec) x (ftv x `Set.difference` Set.fromList tvs')
 
-resolveModule (t@(Instance cls ctx head ms ann):rs) = do
+resolveToplevel (t@(Instance cls ctx head ms ann):rs) env = do
   cls' <- lookupTy cls `catchJunk` t
 
   let fvs = toList (foldMap ftv ctx <> ftv head)
   fvs' <- traverse tagVar fvs
 
-  t' <- extendTyvarN (zip fvs fvs') $ do
+  t' <- extendTyvars (zip fvs fvs') $ do
     ctx' <- traverse (reType t) ctx
     head' <- reType t head
 
     (ms', vs) <- unzip <$> traverse reMethod ms
-    ms'' <- extendN (concat vs) (sequence ms')
+    ms'' <- extendValues (concat vs) (sequence ms')
 
     pure (Instance cls' ctx' head' ms'' ann)
 
-  (t':) <$> resolveModule rs
+  first (t':) <$> resolveToplevel rs env
 
-lookupVar :: MonadResolve m
-          => Var Parsed -> VarKind -> Map.Map (Var Parsed) ScopeVariable
-          -> m (Var Resolved)
-lookupVar v k m = case Map.lookup v m of
-    Nothing -> confesses (NotInScope k v [])
-    Just (SVar x) -> pure x
-    Just (SAmbiguous vs) -> confesses (Ambiguous v vs)
-
-lookupEx :: MonadResolve m => Var Parsed -> m (Var Resolved)
-lookupEx v = asks varScope >>= lookupVar v (if isCtorVar v then VarCtor else VarVar)
-
-lookupTy :: MonadResolve m => Var Parsed -> m (Var Resolved)
-lookupTy v = asks tyScope >>= lookupVar v (if isCtorVar v then VarCtor else VarType)
-
-lookupTyvar :: MonadResolve m => Var Parsed -> m (Var Resolved)
-lookupTyvar v = asks tyvarScope >>= lookupVar v VarTyvar
+resolveModTerm :: MonadResolve m
+               => ModuleTerm Parsed
+               -> m (ModuleTerm Resolved, Environment)
+resolveModTerm (ModStruct b) = first ModStruct <$> resolveToplevel b mempty
+resolveModTerm (ModName n) = do
+  mod <- lookupMod n
+  case mod of
+    (n', EnvModule e) -> pure (ModName n', e)
 
 resolveTele :: (MonadResolve m, Reasonable f p)
             => f p -> [TyConArg Parsed] -> m ([TyConArg Resolved], [(Var Parsed, Var Resolved)])
@@ -226,7 +232,7 @@ reExpr r@(VarRef v a) = flip VarRef a <$> (lookupEx v `catchJunk` r)
 
 reExpr (Let bs c a) = do
   (bs', vs, ts) <- unzip3 <$> traverse reBinding bs
-  extendTyvarN (concat ts) . extendN (concat vs) $
+  extendTyvars (concat ts) . extendValues (concat vs) $
     Let <$> traverse (uncurry (flip (<$>) . reExpr . view bindBody)) (zip bs bs')
         <*> reExpr c
         <*> pure a
@@ -238,7 +244,7 @@ reExpr (Fun p e a) = do
         pure (PatParam p', vs, ts)
       reWholePattern' _ = error "EvParam resolve"
   (p', vs, ts) <- reWholePattern' p
-  extendTyvarN ts . extendN vs $ Fun p' <$> reExpr e <*> pure a
+  extendTyvars ts . extendValues vs $ Fun p' <$> reExpr e <*> pure a
 
 reExpr r@(Begin [] a) = dictates (wrapError r EmptyBegin) $> junkExpr a
 reExpr (Begin es a) = Begin <$> traverse reExpr es <*> pure a
@@ -281,9 +287,11 @@ reExpr (Tuple es a) = Tuple <$> traverse reExpr es <*> pure a
 reExpr (ListExp es a) = ListExp <$> traverse reExpr es <*> pure a
 reExpr (TupleSection es a) = TupleSection <$> traverse (traverse reExpr) es <*> pure a
 
-reExpr r@(OpenIn m e a) =
-  retcons (wrapError r) $
-    resolveOpen m Nothing (\m' -> OpenIn m' <$> reExpr e <*> pure a)
+reExpr r@(OpenIn m e a) = do
+  res <- recover Nothing . retcons (wrapError r) $ Just <$> resolveModTerm m
+  case res of
+    Just (m', mEnv) -> local (env %~ (mEnv<>)) (OpenIn m' <$> reExpr e <*> pure a)
+    Nothing -> pure (VarRef junkVar a)
 
 reExpr (Lazy e a) = Lazy <$> reExpr e <*> pure a
 reExpr (Vta e t a) = Vta <$> reExpr e <*> reType e t <*> pure a
@@ -295,11 +303,11 @@ reExpr (ListComp e qs a) =
       go (CompGen b e an:qs) acc = do
         e <- reExpr e
         (b, es, ts) <- reWholePattern b
-        extendTyvarN ts . extendN es $
+        extendTyvars ts . extendValues es $
           go qs (CompGen b e an:acc)
       go (CompLet bs an:qs) acc =do
         (bs', vs, ts) <- unzip3 <$> traverse reBinding bs
-        extendTyvarN (concat ts) . extendN (concat vs) $ do
+        extendTyvars (concat ts) . extendValues (concat vs) $ do
           bs <- traverse (uncurry (flip (<$>) . reExpr . view bindBody)) (zip bs bs')
           go qs (CompLet bs an:acc)
       go [] acc = ListComp <$> reExpr e <*> pure (reverse acc) <*> pure a
@@ -311,7 +319,7 @@ reArm :: MonadResolve m
       => Arm Parsed -> m (Arm Resolved)
 reArm (Arm p g b) = do
   (p', vs, ts) <- reWholePattern p
-  extendTyvarN ts . extendN vs $
+  extendTyvars ts . extendValues vs $
     Arm p' <$> traverse reExpr g <*> reExpr b
 
 
@@ -324,7 +332,7 @@ reType _ v@TySkol{} = error ("impossible! resolving skol " ++ show v)
 reType _ v@TyWithConstraints{} = error ("impossible! resolving withcons " ++ show v)
 reType r (TyPi (Invisible v k req) ty) = do
   v' <- tagVar v
-  ty' <- extendTyvar (v, v') $ reType r ty
+  ty' <- extendTyvars [(v, v')] $ reType r ty
   k <- traverse (reType r) k
   pure (TyPi (Invisible v' k req) ty')
 reType r (TyPi (Anon f) x) = TyPi . Anon <$> reType r f <*> reType r x
@@ -388,7 +396,7 @@ rePattern r@(PType p t a) = do
   (p', vs, ts) <- rePattern p
   let fvs = toList (ftv t)
   fresh <- for fvs $ \x -> lookupTyvar x `absolving` tagVar x
-  t' <- extendTyvarN (zip fvs fresh) (reType r t)
+  t' <- extendTyvars (zip fvs fresh) (reType r t)
   let r' = PType p' t' a
   pure (r', vs, zip3 fvs fresh (repeat r') ++ ts)
 rePattern (PRecord f a) = do
@@ -435,25 +443,6 @@ reMethod b@Matching{} =
   confesses (ArisingFrom IllegalMethod (BecauseOf b))
 reMethod TypedMatching{} = error "reBinding TypedMatching{}"
 
-resolveOpen :: MonadResolve m => Var Parsed -> Maybe T.Text -> (Var Resolved -> m a) -> m a
-resolveOpen name as m = do
-  stack <- asks modStack
-  (ModuleScope modules) <- get
-  case lookupModule name modules stack of
-    Nothing -> confesses (NotInScope VarModule name [])
-    Just (name', Scope vars tys _ _) ->
-      let prefix = case as of
-                     Nothing -> id
-                     Just v -> InModule v
-      in
-        local (\s -> s { varScope = Map.mapKeys prefix vars `Map.union` varScope s
-                       , tyScope  = Map.mapKeys prefix tys  `Map.union` tyScope s }) (m name')
-
-  where
-    lookupModule n m [] = Map.lookup n m
-    lookupModule n m x@(_:xs) = Map.lookup (foldl (flip InModule) n x) m
-                                <|> lookupModule n m xs
-
 junkVar :: Var Resolved
 junkVar = TgInternal "<missing>"
 
@@ -473,4 +462,21 @@ reField (Field n e s) = Field n <$> reExpr e <*> pure s
 
 isCtorVar :: Var Parsed -> Bool
 isCtorVar (Name t) = T.length t > 0 && classify (T.head t) == Upper
-isCtorVar (InModule _ v) = isCtorVar v
+
+varName :: Var Parsed -> VarName
+varName (Name n) = n
+
+-- | Resolve the remaining top level functions with some expression which
+-- extends the scope.
+doTop :: MonadResolve m
+                 => [Toplevel Parsed] -> Environment -> TopAccess
+                 -> (Environment -> Environment)
+                 -> m (Toplevel Resolved)
+                 -> m ([Toplevel Resolved], Environment)
+doTop xs e am ext x = do
+  let ext' = case am of
+               Public -> ext
+               Private -> id
+  local (env %~ ext) $ do
+    x' <- x
+    first (x':) <$> resolveToplevel xs (ext' e)

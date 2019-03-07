@@ -20,7 +20,7 @@ genVar = do
   t <- Gen.text (Range.linear 1 25) Gen.lower
   let alphaIndex (c:cs) = alphaIndex cs + (ord c - 97)
       alphaIndex [] = 0
-  pure (TgName t (alphaIndex (unpack t)))
+  pure . TgName $ Ident t (alphaIndex (unpack t))
 
 genType :: MonadGen m => m (Type Typed)
 genType =

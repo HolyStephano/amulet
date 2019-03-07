@@ -16,8 +16,6 @@ import Control.Monad.Namey
 import Types.Infer (inferProgram)
 
 import Syntax.Resolve (ResolveError, resolveProgram)
-import Syntax.Resolve.Toplevel (extractToplevels)
-import qualified Syntax.Resolve.Scope as RS
 import Syntax.Desugar (desugarProgram)
 import Syntax.Builtin
 
@@ -53,31 +51,23 @@ toEither (That x) = Right x
 compile :: MonadNamey m => [(SourceName, T.Text)] -> m CompileResult
 compile [] = error "Cannot compile empty input"
 compile (file:files) = do
-  file' <- go (Right ([], builtinResolve, builtinModules, builtinEnv)) file
+  file' <- go (Right ([], builtinResolve, builtinEnv)) file
   files' <- foldlM go file' files
   case files' of
-    Right (prg, _, _, _) -> CSuccess <$> runLowerT (lowerProg prg)
+    Right (prg, _, _) -> CSuccess <$> runLowerT (lowerProg prg)
     Left err -> pure err
 
   where
-    go (Right (tops, scope, modScope, env)) (name, file) =
+    go (Right (tops, scope, env)) (name, file) =
       case runParser name (L.fromStrict file) parseTops of
         (Just parsed, _) -> do
-          resolved <- resolveProgram scope modScope parsed
+          resolved <- resolveProgram scope parsed
           case resolved of
-            Right (resolved, modScope') -> do
+            Right (resolved, scope') -> do
               desugared <- desugarProgram resolved
               infered <- toEither <$> inferProgram env desugared
               case infered of
-                Right (prog, env') ->
-                  let (var, tys) = extractToplevels parsed
-                      (var', tys') = extractToplevels resolved
-                  in pure $ Right (tops ++ prog
-                                  , scope { RS.varScope = RS.insertN' (RS.varScope scope) (zip var var')
-                                          , RS.tyScope  = RS.insertN' (RS.tyScope scope)  (zip tys tys')
-                                          }
-                                  , modScope'
-                                  , env')
+                Right (prog, env') -> pure $ Right (tops ++ prog, scope', env')
                 Left es -> pure $ Left $ CInfer es
             Left es -> pure $ Left $ CResolve es
         (Nothing, es) -> pure $ Left $ CParse es

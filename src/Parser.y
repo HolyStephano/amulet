@@ -40,13 +40,13 @@ module Parser
 
 import Control.Arrow (second)
 
-import Data.List (intercalate, nub)
-import Data.Maybe (fromJust, isJust)
-import Data.Span
-import Data.Spanned
-import Data.Semigroup
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Maybe (fromJust, isJust)
+import Data.List (intercalate, nub)
 import qualified Data.Text as T
+import Data.Semigroup
+import Data.Spanned
+import Data.Span
 
 import Parser.Precedence
 import Parser.Wrapper
@@ -179,22 +179,30 @@ Top :: { Toplevel Parsed }
     | Access type BindName ListE(TyConArg) TypeBody { TypeDecl $1 (getL $3) $4 $5 }
     | Access type TyConArg BindOp TyConArg TypeBody { TypeDecl $1 (getL $4) [$3, $5] $6 }
 
-    | module qconid '=' Begin(Tops)            { Module Public (getName $2) (getL $4) }
-    | private module qconid '=' Begin(Tops)    { Module Private (getName $3) (getL $5) }
-    | module conid '=' Begin(Tops)             { Module Public (getName $2) (getL $4) }
-    | private module conid '=' Begin(Tops)     { Module Private (getName $3) (getL $5) }
-    | module conid '=' Con                     { Open (getL $4) (Just (getIdent $2)) }
+    | module conid '=' ModuleTerm              { Module Public (getName $2) $4 }
+    | private module conid '=' ModuleTerm      { Module Private (getName $3) $5 }
 
     -- Note, we use fmap rather than <$>, as Happy's parser really doesn't like that.
     | class Type Begin(ClassItems)             {% fmap (withPos2 $1 $3) $ buildClass Public $2 (getL $3) }
     | private class Type Begin(ClassItems)     {% fmap (withPos2 $1 $4) $ buildClass Private $3 (getL $4) }
     | instance Type Begin(Methods)             {% fmap (withPos2 $1 $3) $ buildInstance $2 (getL $3) }
 
-    | open Con                                 { Open (getL $2) Nothing }
+    | open ModuleTerm                          { Open Public $2 }
+
+ModuleTerm :: { ModuleTerm Parsed }
+  : ModuleAtom                                 { $1 }
+  | ModuleTerm ModuleAtom                      { ModApply $1 $2 }
+  --  ModuleTerm ':' ModuleType                  { ModuleConstraint $1 $3 }
+
+ModuleAtom :: { ModuleTerm Parsed }
+  -- : qconid                                     { ModName (getName $1) }
+  : conid                                      { ModName (getName $1) }
+  | Begin(Tops)                                { ModStruct (getL $1) }
+  | '(' ModuleTerm ')'                         { $2 }
 
 Begin(a)
-  : begin a end                             { lPos2 $1 $3 $2 }
-  | '$begin' a '$end'                       { lPos2 $1 $3 $2 }
+  : begin a end                                { lPos2 $1 $3 $2 }
+  | '$begin' a '$end'                          { lPos2 $1 $3 $2 }
 
 TypeBody :: { [Constructor Parsed] }
   :                                            { [] }
@@ -255,7 +263,7 @@ Expr0 :: { Expr Parsed }
       : fun ListE1(Parameter) '->' ExprBlock '$end'
         { respanFun $1 $4 $ foldr (\x y -> withPos2 x $4 $ Fun x y) $4 $2 }
       | let BindGroup ExprIn ExprBlock '$end'  { withPos2 $1 $4 $ Let (reverse $2) $4 }
-      | let open Con ExprIn ExprBlock '$end'   { withPos2 $1 $5 $ OpenIn (getL $3) $5 }
+      | let open ModuleTerm ExprIn ExprBlock '$end'   { withPos2 $1 $5 $ OpenIn $3 $5 }
       | if Expr then ExprBlock else ExprBlock '$end'
           { withPos2 $1 $6 $ If $2 $4 $6 }
       | match List1(Expr, ',') with ListE1(Arm) '$end'
@@ -274,12 +282,14 @@ Expr0 :: { Expr Parsed }
 -- 'M. foo.bar' could be M.(foo.bar) or M.(foo).bar
 PreAtom :: { Expr Parsed }
      : Atom                                   { $1 }
-     | qdotid Atom                            { withPos2 $1 $2 $ OpenIn (getName $1) $2 }
+     | qdotid Atom                            { foldr ((withPos2 $1 $2.) . OpenIn . ModName .  Name) $2 (getDots $1) }
      | '!' Atom                                { makeBang $1 $2 }
 
 Atom :: { Expr Parsed }
-     : Var                                     { withPos1 $1 (VarRef (getL $1)) }
-     | Con                                     { withPos1 $1 (VarRef (getL $1)) }
+     : ident                                   { getNameExpr $1 }
+     | qident                                  { getNameExpr $1 }
+     | conid                                   { getNameExpr $1 }
+     | qconid                                  { getNameExpr $1 }
      | Lit                                     { withPos1 $1 (Literal (getL $1)) }
      | hole                                    { withPos1 $1 (Hole (Name (getHole $1))) }
      | '_'                                     { withPos1 $1 (Hole (Name (T.singleton '_'))) }
@@ -315,7 +325,7 @@ Operator :: { Expr Parsed }
          | '~'                                { withPos1 $1 $ varE "~" }
          | op                                 { withPos1 $1 $ VarRef (getName $1) }
          | opid                               { withPos1 $1 $ VarRef (getName $1) }
-         | qopid                              { withPos1 $1 $ VarRef (getName $1) }
+         | qopid                              { getNameExpr $1 }
 
 Section :: { Expr Parsed }
         : Expr                                { $1 }
@@ -326,8 +336,8 @@ Section :: { Expr Parsed }
         | '!'                                 { withPos1 $1 $ VarRef (Name (T.pack "_!")) }
 
 Reference :: { Located (Var Parsed) }
-  : Var             { $1 }
-  | Con             { $1 }
+  : ident           { lPos1 $1 $ getName $1 }
+  | conid           { lPos1 $1 $ getName $1 }
   | '(' op ')'      { lPos2 $1 $3 $ getName $2 }
   | '(' opid ')'    { lPos2 $1 $3 $ getName $2 }
   | '(' qopid ')'   { lPos2 $1 $3 $ getName $2 }
@@ -346,14 +356,9 @@ OptType :: { Expr Parsed -> Expr Parsed }
   :                                           { id }
   | ':' Type                                  { withPos1 $2 . flip Ascription (getL $2) }
 
-
-Var :: { Located (Var Parsed) }
-    : ident  { lPos1 $1 $ getName $1 }
-    | qident { lPos1 $1 $ getName $1 }
-
 Con :: { Located (Var Parsed) }
     : conid      { lPos1 $1 $ getName $1 }
-    | qconid     { lPos1 $1 $ getName $1 }
+    --- | qconid     { lPos1 $1 $ getName $1 }
 
 TyVar :: { Located (Var Parsed) }
       : tyvar { lPos1 $1 $ Name (getIdent $1) }
@@ -442,7 +447,7 @@ MPattern :: { Pattern Parsed }
          : ArgP                   { $1 }
          | Con ArgP               { withPos2 $1 $2 $ Destructure (getL $1) (Just $2) }
          | MPattern ':' TypeOp    { withPos2 $1 $3 $ PType $1 (getL $3) }
-         | MPattern as Var        { withPos2 $1 $3 $ PAs $1 (getL $3) }
+         | MPattern as ident      { withPos2 $1 $3 $ PAs $1 (getName $3) }
 
 -- | An alternative to Pattern without any type pattern, suitable for usage in
 -- bindings.
@@ -452,13 +457,13 @@ MPattern :: { Pattern Parsed }
 BPattern :: { Pattern Parsed }
          : ArgP                   { $1 }
          | Con ArgP               { withPos2 $1 $2 $ Destructure (getL $1) (Just $2) }
-         | BPattern as Var        { withPos2 $1 $3 $ PAs $1 (getL $3) }
+         | BPattern as ident      { withPos2 $1 $3 $ PAs $1 (getName $3) }
 
 Pattern :: { Pattern Parsed }
         : ArgP                    { $1 }
         | Con ArgP                { withPos2 $1 $2 $ Destructure (getL $1) (Just $2) }
         | Pattern ':' Type        { withPos2 $1 $3 $ PType $1 (getL $3) }
-        | Pattern as Var          { withPos2 $1 $3 $ PAs $1 (getL $3) }
+        | Pattern as ident        { withPos2 $1 $3 $ PAs $1 (getName $3) }
 
 ArgP :: { Pattern Parsed }
      : BindName                                   { withPos1 $1 $ Capture (getL $1) }
@@ -513,7 +518,8 @@ TypeOperatorF :: { Var Parsed }
   | '->'                                          { Name $ T.pack "->" }
 
 TypeAtom :: { Located (Type Parsed) }
-         : Var                                    { lPos1 $1 $ TyCon (getL $1) }
+         : ident                                  { lPos1 $1 $ TyCon (getName $1) }
+         | qident                                 { lPos1 $1 $ TyCon (let Token (TcIdentifierQual _ x) _ _ = $1 in Name x) }
          | TyVar                                  { lPos1 $1 $ TyVar (getL $1) }
          | Con                                    { lPos1 $1 $ TyPromotedCon (getL $1) }
          | type                                   { lPos1 $1 TyType }
@@ -608,11 +614,17 @@ getIdent  (Token (TcConIdent x) _ _)   = x
 getIdent  (Token (TcAccess x) _ _)     = x
 getIdent  (Token (TcTyvar x) _ _)      = x
 
-getName (Token (TcIdentifierQual ms x) _ _) = foldl (flip InModule) (Name x) ms
-getName (Token (TcOpIdentQual ms x) _ _)    = foldl (flip InModule) (Name x) ms
-getName (Token (TcConIdentQual ms x) _ _)   = foldl (flip InModule) (Name x) ms
-getName (Token (TcDotQual ms) _ _)          = foldl (flip InModule) (Name (last ms)) (init ms)
-getName x                                   = Name (getIdent x)
+getName x                              = Name (getIdent x)
+getDots (Token (TcDotQual ms) _ _)     = reverse ms
+
+getNameExpr tok@(Token (TcIdentifierQual xs x)_ _) = getQualExpr tok xs x
+getNameExpr tok@(Token (TcConIdentQual xs x) _ _) = getQualExpr tok xs x
+getNameExpr tok@(Token (TcOpIdentQual xs x) _ _) = getQualExpr tok xs x
+getNameExpr tok = withPos1 tok (VarRef (getName tok))
+
+getQualExpr :: Token -> [T.Text] -> T.Text -> Expr Parsed
+getQualExpr tok xs x = foldr ((withPos1 tok .) . OpenIn . ModName . Name)
+                             (withPos1 tok $ VarRef (Name x)) (reverse xs)
 
 getHole   (Token (TcHole x) _ _)       = x
 getInt    (Token (TcInteger x) _ _)    = x

@@ -1,18 +1,22 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, FlexibleContexts #-}
+{-# LANGUAGE
+  OverloadedStrings
+, LambdaCase
+, FlexibleContexts
+, DeriveFunctor
+, TemplateHaskell #-}
 
 -- | Track variables in the current scope while resolving 'Syntax'. This
 -- also tracks ambiguous definitions and modules.
 module Syntax.Resolve.Scope
-  ( Scope(..)
-  , ScopeVariable(..)
-  , ModuleScope(..)
-  , emptyScope, emptyModules
-  , tagVar, tagModule
-  , extend, extendN
-  , extendTy, extendTyN
-  , extendTyvar, extendTyvarN
-  , extendM
-  , insertN'
+  ( VarName
+  , EnvSlot(..)
+  , ModuleEnvironment(..)
+  , Environment(..), envValues, envTypes, envModules, envClasses
+  , Context(..), env, typeVars
+  , emptyContext
+  , tagVar
+  , withValues, extendValues, extendTyvars
+  , prefixEnv
   ) where
 
 import qualified Data.Map as Map
@@ -22,114 +26,104 @@ import Data.List
 
 import Control.Monad.Reader
 import Control.Monad.Namey
+import Control.Lens hiding (Context)
 
 import Syntax.Var
+import Syntax
+
+-- | The name of your variables
+type VarName = T.Text
 
 -- | A variable in the current scope
-data ScopeVariable
-  = SVar (Var Resolved)       -- ^ Can be resolved to a specific variable
-  | SAmbiguous [Var Resolved] -- ^ Can be resolved to 2 or more variables.
-  deriving (Eq, Ord, Show)
+data EnvSlot a
+  = EKnown a       -- ^ Can be resolved to a specific definition site
+  | EAmbiguous [a] -- ^ Can be resolved to 2 or more definition sites.
+  deriving (Eq, Ord, Show, Functor)
 
--- | The current scope of the resolver.
-data Scope = Scope
-             { -- | All variables in the current scope
-               varScope    :: Map.Map (Var Parsed) ScopeVariable
-               -- | All types in the current scope
-             , tyScope     :: Map.Map (Var Parsed) ScopeVariable
-               -- | All type variables in the current scope
-             , tyvarScope  :: Map.Map (Var Parsed) ScopeVariable
-               -- | The current module we are resolving in
-             , modStack    :: [T.Text]
-             }
+data ModuleEnvironment
+  = EnvModule Environment
+  | EnvFunctor VarName (ModuleType Typed) (ModuleType Typed)
   deriving (Show)
 
--- | A mapping of fully-qualified module names to the variables within
--- them.
---
--- There is only one 'ModuleScope' for the resolution process.
-newtype ModuleScope = ModuleScope (Map.Map (Var Parsed) (Var Resolved, Scope))
+-- | The current environment of a module
+data Environment =
+  Environment
+  { -- | Values visible in this module
+    _envValues :: Map.Map VarName (EnvSlot (Var Resolved))
+    -- | Types visible in this module
+  , _envTypes :: Map.Map VarName (Var Resolved)
+    -- | Modules visible in this module
+  , _envModules :: Map.Map VarName (Var Resolved, ModuleEnvironment)
+    -- | Classes visible in this module
+  , _envClasses :: Map.Map VarName (Var Resolved)
+  }
   deriving (Show)
 
--- | An empty scope, suitable for a new module
-emptyScope :: Scope
-emptyScope = Scope mempty mempty mempty mempty
+instance Semigroup Environment where
+  Environment v t m c <> Environment v' t' m' c' = Environment (v <> v') (t <> t') (m <> m') (c <> c')
 
--- | An empty module scope
-emptyModules :: ModuleScope
-emptyModules = ModuleScope mempty
+instance Monoid Environment where
+  mempty = Environment mempty mempty mempty mempty
+
+-- | The current context to resolve in
+data Context =
+  Context
+  { _env :: Environment
+  , _typeVars :: Map.Map VarName (EnvSlot (Var Resolved))
+  }
+  deriving (Show)
+
+makeLenses ''Context
+makeLenses ''Environment
+
+-- | An empty resolution context
+emptyContext :: Context
+emptyContext = Context mempty mempty
 
 -- | Convert a parsed variable into a resolved one. This requires that
 -- the variable is unqualified.
 tagVar :: MonadNamey m => Var Parsed -> m (Var Resolved)
-tagVar (Name n) = TgName n <$> gen
-tagVar x = error ("Cannot tag variable " ++ show x)
-
--- | Convert a parsed module name into a resolved one. This works on both
--- unqualified and qualified module names.
-tagModule :: MonadNamey m => Var Parsed -> m (Var Resolved)
-tagModule n = TgName (T.intercalate (T.singleton '.') (expand n)) <$> gen where
-  expand (Name n) = [n]
-  expand (InModule m n) = m:expand n
+tagVar (Name n) = TgName . Ident n <$> gen
 
 -- | Insert one or more variables into a map. If multiple variables with
 -- the same name are defined, this will be considered as ambiguous.
-insertN :: Map.Map (Var Parsed) ScopeVariable
-        -> [(Var Parsed, Var Resolved)] -> Map.Map (Var Parsed) ScopeVariable
+insertN :: Map.Map VarName (EnvSlot a)
+        -> [(Var Parsed, a)]
+        -> Map.Map VarName (EnvSlot a)
 insertN scope = foldr (\case
-                          [(v, v')] -> Map.insert v (SVar v')
-                          vs@((v,_):_) -> Map.insert v (SAmbiguous (map snd vs))
-                          [] -> undefined) scope
+                          [(Name v, v')] -> Map.insert v (EKnown v')
+                          vs@((Name v,_):_) -> Map.insert v (EAmbiguous (map snd vs))
+                          _ -> undefined) scope
                 . groupBy ((==) `on` fst)
                 . sortOn fst
 
--- | Insert one or more variables into a map. If a variable is declared
--- multiple times, we will prefer the latest definition.
-insertN' :: Map.Map (Var Parsed) ScopeVariable
-         -> [(Var Parsed, Var Resolved)] -> Map.Map (Var Parsed) ScopeVariable
-insertN' = foldl' (\s (v, v') -> Map.insert v (SVar v') s)
-
--- | Create a scope with one variable and evaluate the provided monad
--- within it.
-extend :: MonadReader Scope m => (Var Parsed, Var Resolved) -> m a -> m a
-extend (v, v') =
-  local (\x -> x { varScope = Map.insert v (SVar v') (varScope x) })
-
--- | Create a scope with one or more variables and evaluate the provided
--- monad within it.
-extendN :: MonadReader Scope m => [(Var Parsed, Var Resolved)] -> m a -> m a
-extendN vs =
-  local (\x -> x { varScope = insertN (varScope x) vs })
-
--- | Create a scope with one type and evaluate the provided monad within
--- it.
-extendTy :: MonadReader Scope m => (Var Parsed, Var Resolved) -> m a -> m a
-extendTy (v, v') =
-  local (\x -> x { tyScope = Map.insert v (SVar v') (tyScope x) })
-
--- | Create a scope with one or more types and evaluate the provided
--- monad within it.
-extendTyN :: MonadReader Scope m => [(Var Parsed, Var Resolved)] -> m a -> m a
-extendTyN vs =
-  local (\x -> x { tyScope = insertN (tyScope x) vs })
-
--- | Create a scope with one type variables and evaluate the provided
--- monad within it.
-extendTyvar :: MonadReader Scope m => (Var Parsed, Var Resolved) -> m a -> m a
-extendTyvar (v, v') =
-  local (\x -> x { tyvarScope = Map.insert v (SVar v') (tyvarScope x) })
+-- | Create a scope with one or more variables
+withValues :: [(Var Parsed, Var Resolved)] -> Environment -> Environment
+withValues vs = envValues %~ flip insertN vs
 
 -- | Create a scope with one or more type variables and evaluate the
 -- provided monad within it.
-extendTyvarN :: MonadReader Scope m => [(Var Parsed, Var Resolved)] -> m a -> m a
-extendTyvarN vs =
-  local (\x -> x { tyvarScope = insertN (tyvarScope x) vs })
+extendValues :: MonadReader Context m => [(Var Parsed, Var Resolved)] -> m a -> m a
+extendValues vs = local (env %~ withValues vs)
 
--- | Enter a child module and evaluate the provide monad within it.
-extendM :: MonadReader Scope m => Var Parsed -> m a -> m a
-extendM m = local (\x -> x { modStack = extend m (modStack x) }) where
-  extend (Name n) xs = n:xs
-  extend (InModule m n) xs = m:extend n xs
+-- | Create a scope with one or more type variables and evaluate the
+-- provided monad within it.
+extendTyvars :: MonadReader Context m => [(Var Parsed, Var Resolved)] -> m a -> m a
+extendTyvars vs = local (typeVars %~ flip insertN vs)
 
 gen :: MonadNamey m => m Int
-gen = (\(TgName _ i) -> i) <$> genName
+gen = (\(Ident _ i) -> i) <$> genIdent
+
+prefixEnv :: Var Resolved -> Environment -> Environment
+prefixEnv var env =
+  Environment
+  { _envValues = fmap dot <$> _envValues env
+  , _envTypes  = dot <$> _envTypes env
+  , _envModules = go <$> _envModules env
+  , _envClasses = dot <$> _envClasses env
+  }
+  where
+    go (n, EnvModule e) = (dot n, EnvModule (prefixEnv var e))
+
+    dot (TgName n) = undefined var n -- TODO:
+    dot n@TgInternal{} = n

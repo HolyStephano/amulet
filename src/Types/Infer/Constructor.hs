@@ -75,6 +75,6 @@ closeOverGadt vars r cons cty =
 
 -- A bit of a hack for better aesthetics
 simplify :: Type Typed -> Type Typed -> Either (Map.Map (Var Typed) (Type Typed)) (Type Typed, Type Typed)
-simplify (TyVar v@(TgName x _)) b@(TyVar (TgName y _))
+simplify (TyVar v@(TgName (Ident x _))) b@(TyVar (TgName (Ident y _)))
   | x == y = Left (Map.singleton v b)
 simplify x y = Right (x, y)

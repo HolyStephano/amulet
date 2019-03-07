@@ -29,7 +29,6 @@ import Control.Monad.Infer
 import Control.Arrow (first)
 import Control.Lens
 
-import Syntax.Resolve.Toplevel
 import Syntax.Implicits
 import Syntax.Transform
 import Syntax.Builtin
@@ -389,10 +388,12 @@ inferProg (decl@(TypeDecl am n tvs cs):prg) = do
         consFst (TypeDecl am n tvs cs') $
           inferProg prg
 
+{-
 inferProg (Open mod pre:prg) = do
   modImplicits <- view (modules . at mod . non undefined)
   local (classes %~ (<>modImplicits)) $
     consFst (Open mod pre) $ inferProg prg
+-}
 
 inferProg (c@(Class v _ _ _ _ _):prg) = do
   (stmts, decls, clss, implicits) <- condemn $ inferClass c
@@ -409,10 +410,11 @@ inferProg (inst@Instance{}:prg) = do
       addFst _ = undefined
   addFst stmt . local (classes %~ insert (annotation inst) InstSort instName instTy) $ inferProg prg
 
+{-
 inferProg (Module am name body:prg) = do
   (body', env) <- inferProg body
 
-  let (vars, tys) = extractToplevels body
+  let (vars, tys) = undefined body -- TODO: Fix me!!!!
       vars' = map (\x -> (x, env ^. names . at x . non (error ("value: " ++ show x)))) (vars ++ tys)
 
   -- Extend the current scope and module scope
@@ -422,6 +424,7 @@ inferProg (Module am name body:prg) = do
         . (modules %~ (Map.insert name (env ^. classes) . (<> (env ^. modules))))) $
     consFst (Module am name body') $
     inferProg prg
+-}
 
 inferProg [] = asks ([],)
 
@@ -804,13 +807,13 @@ rename = go 0 mempty mempty where
      in (TyPi (Anon (fst (go n l s k))) ty, sub)
   go _ _ s tau = (apply s tau, s)
 
-  new v l var@(TgName vr n)
+  new v l var@(TgName (Ident vr n))
     | toIdx vr == n || vr `Set.member` l =
       let name = genAlnum v
        in if Set.member name l
              then new (v + 1) l var
-             else (TgName name n, v + 1, Set.insert name l)
-    | otherwise = (TgName vr n, v, Set.insert vr l)
+             else (TgName (Ident name n), v + 1, Set.insert name l)
+    | otherwise = (TgName (Ident vr n), v, Set.insert vr l)
 
   new _ _ TgInternal{} = error "TgInternal in rename"
 
@@ -897,7 +900,7 @@ guardOnlyBindings bs = go bs where
 
 nameName :: Var Desugared -> T.Text
 nameName (TgInternal x) = x
-nameName (TgName x _) = x
+nameName (TgName (Ident x _)) = x
 
 mkTypeLambdas :: MonadNamey m => SkolemMotive Typed -> Type Typed -> m (Wrapper Typed)
 mkTypeLambdas motive ty@(TyPi (Invisible tv k _) t) = do

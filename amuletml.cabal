@@ -146,7 +146,6 @@ library
                      , Syntax.Resolve
                      , Syntax.Resolve.Error
                      , Syntax.Resolve.Scope
-                     , Syntax.Resolve.Toplevel
                      -- TC
                      , Types.Infer
                      , Types.Kinds

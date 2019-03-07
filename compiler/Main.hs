@@ -22,8 +22,6 @@ import Backend.Lua
 import Types.Infer (inferProgram)
 
 import Syntax.Resolve (ResolveError, resolveProgram)
-import qualified Syntax.Resolve.Scope as RS
-import Syntax.Resolve.Toplevel (extractToplevels)
 import Syntax.Desugar (desugarProgram)
 import qualified Syntax.Builtin as Bi
 import Syntax.Verify
@@ -60,10 +58,10 @@ compile :: DoOptimise -> [(SourceName, T.Text)] -> CompileResult
 compile _ [] = error "Cannot compile empty input"
 compile opt (file:files) =
   let (res, name) = flip runNamey firstName $ do
-        file' <- go (Right ([], [], [], Bi.builtinResolve, Bi.builtinModules, Bi.builtinEnv)) file
+        file' <- go (Right ([], [], [], Bi.builtinResolve, Bi.builtinEnv)) file
         foldlM go file' files
   in case res of
-       Right (ve, te, prg, _, _, env) ->
+       Right (ve, te, prg, _, env) ->
          -- We run these outside the main namey monad to allow these to be lazily evaluated.
          let (lower, name') = flip runNamey name $ runLowerT (lowerProg prg)
              (optm, _) = flip runNamey name' $ case opt of
@@ -77,47 +75,37 @@ compile opt (file:files) =
        Left err -> err
 
   where
-    go (Right (errs, tyerrs, tops, scope, modScope, env)) (name, file) =
+    go (Right (errs, tyerrs, tops, scope, env)) (name, file) =
       case runParser name (L.fromStrict file) parseTops of
         (Just parsed, _) -> do
-          resolved <- resolveProgram scope modScope parsed
+          resolved <- resolveProgram scope parsed
           case resolved of
-            Right (resolved, modScope') -> do
+            Right (resolved, scope') -> do
               desugared <- desugarProgram resolved
               infered <- inferProgram env desugared
               case infered of
                 That (prog, env') -> do
-                  verifyV <- genName
+                  verifyV <- genIdent
                   let x = runVerify env' verifyV (verifyProgram prog)
-                      (var, tys) = extractToplevels parsed
-                      (var', tys') = extractToplevels resolved
                       errs' = case x of
                         Left es -> toList es
                         Right () -> []
                   pure $ Right ( errs ++ errs'
                                , tyerrs
                                , tops ++ prog
-                               , scope { RS.varScope = RS.insertN' (RS.varScope scope) (zip var var')
-                                       , RS.tyScope  = RS.insertN' (RS.tyScope scope)  (zip tys tys')
-                                       }
-                               , modScope'
+                               , scope'
                                , env' )
                 These errors (_, _) | any isError errors -> pure (Left (CInfer errors))
                 These errors (prog, env') -> do
-                  verifyV <- genName
+                  verifyV <- genIdent
                   let x = runVerify env' verifyV (verifyProgram prog)
-                      (var, tys) = extractToplevels parsed
-                      (var', tys') = extractToplevels resolved
                       errs' = case x of
                         Left es -> toList es
                         Right () -> []
                   pure $ Right ( errs ++ errs'
                                , tyerrs ++ errors
                                , tops ++ prog
-                               , scope { RS.varScope = RS.insertN' (RS.varScope scope) (zip var var')
-                                       , RS.tyScope  = RS.insertN' (RS.tyScope scope)  (zip tys tys')
-                                       }
-                               , modScope'
+                               , scope'
                                , env' )
                 This e -> pure $ Left $ CInfer e
             Left e -> pure $ Left $ CResolve e

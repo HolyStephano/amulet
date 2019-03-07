@@ -10,7 +10,7 @@ For variables which will be removed by the time lowering occurs (such as
 TC or resolver specific names), one may use 'TgInternal'.
 -}
 module Syntax.Builtin
-  ( builtinResolve, builtinModules
+  ( builtinResolve
   , builtinEnv
 
   , tyUnitName, tyBoolName, tyIntName, tyStringName, tyFloatName
@@ -160,34 +160,23 @@ builtins =
     tp x = (ofCore x, TyType)
 
 -- | The builtin scope and module list for the resolver
-builtinResolve :: R.Scope
-builtinModules :: R.ModuleScope
-(builtinResolve, builtinModules) = R.ModuleScope <$> go builtins where
-  go :: BuiltinModule -> (R.Scope, Map.Map (Var Parsed) (Var Resolved, R.Scope))
+builtinResolve :: R.Environment
+builtinResolve = go builtins where
+  go :: BuiltinModule -> R.Environment
   go (BM vs ts ms _) =
-    let scp = R.Scope
-              { R.varScope = buildVars vs
-              , R.tyScope = buildVars ts
-              , R.tyvarScope = mempty, R.modStack = mempty }
+    R.Environment
+    { R._envValues = buildVars (const . R.EKnown) vs
+    , R._envTypes = buildVars const ts
+    , R._envClasses = mempty
+    , R._envModules = buildVars (\n e -> (n, R.EnvModule (go e))) ms }
 
-    in foldr (\(n, mod) (scp, ms) ->
-                let (scp', ms') = go mod
-                    n' = getName n
-                in ( R.Scope
-                     { R.varScope = R.varScope scp <> nest n' (R.varScope scp')
-                     , R.tyScope  = R.tyScope scp  <> nest n' (R.tyScope scp')
-                     , R.tyvarScope = mempty, R.modStack = mempty
-                     }
-                   , ms <> nest n' ms' <> Map.singleton (Name n') (n, scp')) )
-       (scp, mempty) ms
-
-  buildVars :: [(Var Resolved, Type Typed)] -> Map.Map (Var Parsed) R.ScopeVariable
-  buildVars = foldr (\(var, _) -> Map.insert (Name (getName var)) (R.SVar var)) mempty
-
-  nest n = Map.mapKeys (InModule n)
+  buildVars :: (Var Resolved -> a -> b)
+            -> [(Var Resolved, a)]
+            -> Map.Map R.VarName b
+  buildVars f = foldr (\(var, bod) -> Map.insert (getName var) (f var bod)) mempty
 
   getName (TgInternal x) = x
-  getName (TgName x _) = x
+  getName (TgName (Ident x _)) = x
 
 -- | The builtin scope for type inference
 builtinEnv :: T.Env
@@ -198,7 +187,7 @@ builtinEnv = go builtins where
 
 -- | Construct a syntax variable from a core one
 ofCore :: CoVar -> Var Resolved
-ofCore (CoVar i n _) = TgName n i
+ofCore (CoVar i n _) = TgName (Ident n i)
 
 -- Declare some syntactic sugar to make building types easier
 (~>) :: Type Typed -> Type Typed -> Type Typed

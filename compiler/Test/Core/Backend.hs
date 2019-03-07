@@ -27,7 +27,7 @@ import Text.Pretty.Semantic
 result :: String -> T.Text -> T.Text
 result f c = fst . flip runNamey firstName $ do
   let parsed = requireJust f c $ runParser f (L.fromStrict c) parseTops
-  (resolved, _) <- requireRight f c <$> resolveProgram builtinResolve builtinModules parsed
+  (resolved, _) <- requireRight f c <$> resolveProgram builtinResolve parsed
   desugared <- desugarProgram resolved
   (inferred, _) <- requireThat f c <$> inferProgram builtinEnv desugared
   lower <- runLowerT (lowerProg inferred)

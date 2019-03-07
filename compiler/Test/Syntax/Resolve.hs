@@ -20,7 +20,7 @@ import Text.Pretty.Semantic
 result :: String -> T.Text -> T.Text
 result f c = fst . flip runNamey firstName $ do
   let parsed = requireJust f c $ runParser f (L.fromStrict c) parseTops
-  resolved <- resolveProgram builtinResolve builtinModules parsed
+  resolved <- resolveProgram builtinResolve parsed
   pure . displayPlainVerbose . either prettyErrs ((Right<$>) . pretty . fst) $ resolved
 
   where prettyErrs = vsep . map (N.format (N.fileSpans [(f, c)] N.defaultHighlight))

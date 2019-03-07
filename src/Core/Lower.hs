@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, TupleSections, 
+{-# LANGUAGE LambdaCase, TupleSections,
     PatternSynonyms, RankNTypes, ScopedTypeVariables, FlexibleContexts,
     ConstraintKinds, OverloadedStrings, TypeFamilies #-}
 module Core.Lower
@@ -40,7 +40,7 @@ import Core.Var
 
 import qualified Syntax as S
 import Syntax.Let
-import Syntax.Var (Var, Typed, VarResolved(..))
+import Syntax.Var (Ident(..), Var, Typed, VarResolved(..))
 import Syntax.Transform
 import Syntax (Expr(..), Pattern(..), Skolem(..), Toplevel(..), Constructor(..), Arm(..))
 
@@ -194,7 +194,7 @@ lowerAt (ExprWrapper wrap e an) ty =
     S.TypeApp t -> do
       ex' <- lowerAtAtom e (lowerType (S.getType e))
       pure (C.TyApp ex' (lowerType t))
-    S.TypeLam (Skolem (TgName _ id) (TgName n _) _ _) k ->
+    S.TypeLam (Skolem (TgName (Ident _ id)) (TgName (Ident n _)) _ _) k ->
       let ty' (ForallTy (Relevant v) _ t) = substituteInType (VarMap.singleton v (VarTy var)) t
           ty' x = x
           var = CoVar id n TypeVar
@@ -253,7 +253,7 @@ lowerAnyway (S.VarRef v (_, ty)) = do
     -- If we're accessing a natively boxed operator, generate some stubs for it.
     -- This is horrible, and would be nicer as part of the stdlib, but this is
     -- the only solution for now.
-    _ | TgName _ n <- v, n < 0
+    _ | TgName (Ident _ n) <- v, n < 0
       , Just _ <- VarMap.lookup v' boxedTys -> do
           injects <- get
           Atom . flip Ref lty <$> case VarMap.lookup v' injects of
@@ -302,8 +302,6 @@ lowerProgEnv stmt = do
 lowerProg' :: forall m. MonadLower m => [Toplevel Typed] -> m (LowerState, [Stmt])
 
 lowerProg' [] = asks (,[])
-lowerProg' (Open _ _:prg) = lowerProg' prg
-lowerProg' (Module _ _ b:prg) = lowerProg' (b ++ prg)
 lowerProg' (Class{}:prg) = lowerProg' prg
 lowerProg' (Instance{}:prg) = lowerProg' prg
 
@@ -413,7 +411,7 @@ lowerLet bs =
         let var' = mkVal var
             innerTy' = lowerType innerTy
         pvar@(CoVar vn vt _) <- freshFrom var'
-        let p' = stripPtrn var (TgName vt vn) p
+        let p' = stripPtrn var (TgName (Ident vt vn)) p
 
         -- Generate `let x = match test with | ... x' ... -> x`
         One  . (var', outerTy, ) <$> patternWrap pos p' test ty outerTy (Atom (Ref pvar innerTy')) innerTy'

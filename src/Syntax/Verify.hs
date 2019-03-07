@@ -42,7 +42,7 @@ type MonadVerify m =
   , MonadState (Set.Set BindingSite) m )
 
 runVerify :: Env
-          -> Var Resolved
+          -> Ident
           -> WriterT (Seq.Seq VerifyError) (StateT (Set.Set BindingSite) (Reader VerifyScope)) () -> Either (Seq.Seq VerifyError) ()
 runVerify env var = fixup
                   . flip runReader (VerifyScope env (emptyAbsState var))
@@ -69,8 +69,8 @@ verifyProgram = traverse_ verifyStmt where
     parametricity st t
 
   verifyStmt TypeDecl{} = pure ()
-  verifyStmt (Module _ _ p) = verifyProgram p
-  verifyStmt Open{} = pure ()
+  -- verifyStmt (Module _ _ p) = verifyProgram p
+  -- verifyStmt Open{} = pure ()
 
 -- | Verify a recursive definition is well-formed
 verifyBindingGroup :: MonadVerify m

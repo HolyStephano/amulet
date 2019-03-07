@@ -27,10 +27,10 @@ result f c = fst . flip runNamey firstName $ do
   let parsed = requireJust f c $ runParser f (L.fromStrict c) parseTops
       prettyErrs = vsep . map (N.format (N.fileSpans [(f, c)] N.defaultHighlight))
 
-  (resolved, _) <- requireRight f c <$> resolveProgram builtinResolve builtinModules parsed
+  (resolved, _) <- requireRight f c <$> resolveProgram builtinResolve parsed
   desugared <- desugarProgram resolved
   (inferred, env) <- requireThat f c <$> inferProgram builtinEnv desugared
-  v <- genName
+  v <- genIdent
   case runVerify env v (verifyProgram inferred) of
     Left es -> pure (displayPlain (prettyErrs (toList es)))
     Right () -> pure T.empty
