@@ -43,7 +43,7 @@ desugarProgram = traverse statement where
   modTerm :: ModuleTerm Resolved -> m (ModuleTerm Desugared)
   modTerm (ModName v) = pure (ModName v)
   modTerm (ModStruct ss) = ModStruct <$> traverse statement ss
-  modTerm (ModFunctor v arg bod) = ModFunctor v (modTy arg) <$> modTerm bod
+  modTerm (ModFun v arg bod) = ModFun v (modTy arg) <$> modTerm bod
   modTerm (ModApply f x) = ModApply <$> modTerm f <*> modTerm x
   modTerm (ModConstraint term ty) = ModConstraint <$> modTerm term <*> pure (modTy ty)
 

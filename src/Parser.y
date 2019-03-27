@@ -92,6 +92,7 @@ import Syntax
   then     { Token TcThen _ _ }
   else     { Token TcElse _ _ }
   begin    { Token TcBegin _ _ }
+  struct   { Token TcStruct _ _ }
   end      { Token TcEnd _ _ }
   in       { Token TcIn _ _ }
   external { Token TcExternal _ _ }
@@ -99,6 +100,7 @@ import Syntax
   true     { Token TcTrue _ _ }
   false    { Token TcFalse _ _ }
   match    { Token TcMatch _ _ }
+  sig      { Token TcSig _ _ }
   with     { Token TcWith _ _ }
   function { Token TcFunction _ _ }
   type     { Token TcType _ _ }
@@ -152,7 +154,10 @@ import Syntax
 %%
 
 Tops :: { [Toplevel Parsed] }
-     : List1(Top, TopSep)                      { $1 }
+     : List1(Top, TopSep)        { $1 }
+
+Specs :: { [TopSpec Parsed] }
+      : List1(TopSpec, TopSep)   { $1 }
 
 -- | An access modifier for top-level definitions
 --
@@ -161,8 +166,8 @@ Tops :: { [Toplevel Parsed] }
 -- followed by an Access or not). It's slightly absurd that inlining the
 -- production works, but at the same time makes perfect sense.
 Access :: { TopAccess }
-  :                                            { Public }
-  | private                                    { Private }
+  :            { Public }
+  | private    { Private }
 
 TopSep :: { () }
     : ';;'   { () }
@@ -180,6 +185,8 @@ Top :: { Toplevel Parsed }
     | Access type TyConArg BindOp TyConArg TypeBody { TypeDecl $1 (getL $4) [$3, $5] $6 }
 
     | module conid '=' ModuleTerm              { Module Public (getName $2) $4 }
+    | module type conid '=' ModuleType         { SigBind Public (getName $3) $5 }
+    | private module type conid '=' ModuleType { SigBind Private (getName $4) $6 }
     | private module conid '=' ModuleTerm      { Module Private (getName $3) $5 }
 
     -- Note, we use fmap rather than <$>, as Happy's parser really doesn't like that.
@@ -192,17 +199,44 @@ Top :: { Toplevel Parsed }
 ModuleTerm :: { ModuleTerm Parsed }
   : ModuleAtom                                 { $1 }
   | ModuleTerm ModuleAtom                      { ModApply $1 $2 }
-  --  ModuleTerm ':' ModuleType                  { ModuleConstraint $1 $3 }
+  | ModuleTerm ':' ModuleType                  { ModConstraint $1 $3 }
 
 ModuleAtom :: { ModuleTerm Parsed }
-  -- : qconid                                     { ModName (getName $1) }
-  : conid                                      { ModName (getName $1) }
-  | Begin(Tops)                                { ModStruct (getL $1) }
-  | '(' ModuleTerm ')'                         { $2 }
+  -- : qconid            { ModName (getName $1) }
+  : conid                { ModName (getName $1) }
+  | Struct(Tops)         { ModStruct (getL $1) }
+  | fun '(' conid ':' ModuleType ')' ModuleAtom
+      { ModFun (getName $3) $5 $7 }
+  | '(' ModuleTerm ')'   { $2 }
+
+ModuleType :: { ModuleType Parsed }
+  : conid           { SigRef (getName $1) }
+  | Sig(Specs)       { Signature (getL $1) }
+  | '(' conid ':' ModuleType ')' '->' ModuleType
+    { Functor (getName $2) $4 $7 }
+
+TopSpec :: { TopSpec Parsed }
+  : val SigGroup  { ValSig $2 }
+  | type BindName ListE(TyConArg) TypeBody { TypeSig (getL $2) $3 $4 }
+
+SigGroup :: { [(Var Parsed, Type Parsed)] }
+  : Signature               { [$1] }
+  | SigGroup and Signature  { $3 : $1 }
+
+Signature :: { (Var Parsed, Type Parsed) }
+  : BindName ':' Type { (getL $1, getL $3) }
+
+Sig(a)
+  : sig a end           { lPos2 $1 $3 $2 }
+  | '$begin' a '$end'   { lPos2 $1 $3 $2 }
+
+Struct(a)
+  : struct a end        { lPos2 $1 $3 $2 }
+  | '$begin' a '$end'   { lPos2 $1 $3 $2 }
 
 Begin(a)
-  : begin a end                                { lPos2 $1 $3 $2 }
-  | '$begin' a '$end'                          { lPos2 $1 $3 $2 }
+  : begin a end         { lPos2 $1 $3 $2 }
+  | '$begin' a '$end'   { lPos2 $1 $3 $2 }
 
 TypeBody :: { [Constructor Parsed] }
   :                                            { [] }

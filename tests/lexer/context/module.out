@@ -3,18 +3,18 @@ module X =
   $begin let _ = 1
 
 
-$end $end $sep module X = begin
+$end $end $sep module X = struct
   let _ = 1
 $end end
 
 
 $sep module X =
-begin
+struct
   let _ = 1
 $end end
 
 $sep module X =
-  begin
+  struct
     let _ = 1
   $end end
 
@@ -23,4 +23,22 @@ $sep module X = Y
 
 $sep private module Y =
   $begin let a = 0
-$end $end <eof>
+
+
+$end $end $sep module type Y = sig
+ type t
+ $sep val x : t
+end
+
+$sep module type Z = ( Arg : Y ) -> sig val y : Arg.t end
+
+
+$sep module X = fun ( Arg : Y ) struct
+ let y = Arg.x
+$end end
+
+
+$sep module X' = X : Z
+
+$sep open X Arg
+<eof>

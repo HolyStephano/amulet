@@ -60,7 +60,7 @@ with    Match                   -> Replace with EmptyArms
 (       EmptyArms               -> Pop
 ->      MatchArms               -> Push EmptyBlock
 
-fun     _                       -> Push Fun
+fun     _ | Not toplevel        -> Push Fun
 ->      Fun                     -> Replace with EmptyBlock
 
 if      _                       -> Push If
@@ -68,13 +68,16 @@ then    _                       -> Push Then
 else    _                       -> Push Else
 
 module  [Block<empty>]          -> Push ModuleHead[I]
-module  _                       -> Push ModuleHead
+module  _  | In Block           -> Push ModuleHead
 
-class   _                       -> Push ClassHead
-instance _                      -> Push InstHead
-type    _                       -> Push LetHead
+class   _  | In Block           -> Push ClassHead
+instance _ | In Block           -> Push InstHead
+type    _  | In Block           -> Push LetHead
 
 begin   _                       -> Push Block+Bracket<end>
+struct  _                       -> Push Block+Bracket<end>+ModuleBody
+sig     _                       -> Push Block+Bracket<end>+ModuleBody
+
 ({      _                       -> Push Bracket<_>
 
 [       _                       -> Push List+Bracket<]>

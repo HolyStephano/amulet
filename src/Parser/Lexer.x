@@ -81,6 +81,8 @@ tokens :-
   <0> "then"   { constTok TcThen }
   <0> "else"   { constTok TcElse }
   <0> "begin"  { constTok TcBegin }
+  <0> "struct" { constTok TcStruct }
+  <0> "sig"    { constTok TcSig }
   <0> "end"    { constTok TcEnd }
   <0> "in"     { constTok TcIn }
   <0> "external" { constTok TcExternal }

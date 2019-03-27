@@ -26,6 +26,7 @@ import Syntax.Var
 data ModuleType p
   = Signature [TopSpec p] -- ^ @sig ... end@
   | Functor (Var p) (ModuleType p) (ModuleType p) -- ^ @functor (X : Y) ...@
+  | SigRef (Var p) -- ^ @X@
 
 deriving instance (Eq (Var p), Eq (Ann p)) => Eq (ModuleType p)
 deriving instance (Show (Var p), Show (Ann p)) => Show (ModuleType p)
@@ -50,7 +51,7 @@ deriving instance (Data p, Typeable p, Data (Var p), Data (Ann p)) => Data (TopS
 data ModuleTerm p
   = ModName (Var p) -- ^ @X@
   | ModStruct [Toplevel p]  -- ^ @struct ... end@
-  | ModFunctor (Var p) (ModuleType p) (ModuleTerm p) -- ^@functor (X : Y) ...@
+  | ModFun (Var p) (ModuleType p) (ModuleTerm p) -- ^@functor (X : Y) ...@
   | ModApply (ModuleTerm p) (ModuleTerm p) -- ^ @X Y@
   | ModConstraint (ModuleTerm p) (ModuleType p) -- ^ @(X : Y)@
 
@@ -70,6 +71,7 @@ data Toplevel p
   | ForeignVal TopAccess (Var p) Text (Type p) (Ann p)
   | TypeDecl TopAccess (Var p) [TyConArg p] [Constructor p]
   | Module TopAccess (Var p) (ModuleTerm p)
+  | SigBind TopAccess (Var p) (ModuleType p)
   | Open { openExpose :: TopAccess, openMod :: ModuleTerm p }
   | Class { className :: Var p
           , classAccess :: TopAccess
@@ -140,7 +142,9 @@ instance Pretty (Var p) => Pretty (ModuleType p) where
          ]
 
   pretty (Functor v ty bod) =
-    keyword "functor" <+> parens (pretty v <+> colon <+> pretty ty) <+> pretty bod
+    parens (pretty v <+> colon <+> pretty ty) <+> arrow <+> pretty bod
+
+  pretty (SigRef v) = pretty v
 
 instance Pretty (Var p) => Pretty (TopSpec p) where
   pretty (ValSig []) = keyword "val <<malformed>>"
@@ -163,8 +167,8 @@ instance Pretty (Var p) => Pretty (ModuleTerm p) where
          , indent 2 (vsep (map pretty bod))
          , keyword "end"
          ]
-  pretty (ModFunctor v ty bod) =
-    keyword "functor" <+> parens (pretty v <+> colon <+> pretty ty) <+> pretty bod
+  pretty (ModFun v ty bod) =
+    keyword "fun" <+> parens (pretty v <+> colon <+> pretty ty) <+> pretty bod
   pretty (ModApply x y) = pretty x <+> pretty y
   pretty (ModConstraint x y) = pretty x <+> colon <+> pretty y
 
@@ -199,7 +203,8 @@ instance (Pretty (Var p)) => Pretty (Toplevel p) where
   pretty (Open Public m) = keyword "open" <+> pretty m
   pretty (Open Private m) = keyword "include" <+> pretty m
 
-  pretty (Module am m bod) = keyword "module" <+> prettyAcc am <> pretty m <+> equals <+> pretty bod
+  pretty (Module am m bod) = prettyAcc am <+> keyword "module" <+> pretty m <+> equals <+> pretty bod
+  pretty (SigBind am m bod) = prettyAcc am <+> keyword "module type" <+> pretty m <+> equals <+> pretty bod
 
   pretty (Class v am c h m _) =
     vsep [ keyword "class" <+> prettyAcc am <> maybe (parens mempty) pretty c

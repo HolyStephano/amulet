@@ -1,47 +1,47 @@
 fail_private.ml[11:11 ..11:15]: error
-  Variable not in scope: `X.Y.a`
+  Module not in scope: `Y`
 
-  Arising from use of the expression X.Y.a
+  Arising from use of the expression Y.a
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │           ^^^^^
 fail_private.ml[11:19 ..11:21]: error
-  Variable not in scope: `X.b`
+  Variable not in scope: `b`
 
-  Arising from use of the expression X.b
+  Arising from use of the expression b
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │                   ^^^
 fail_private.ml[11:25 ..11:27]: error
-  Constructor not in scope: `X.A`
+  Constructor not in scope: `A`
 
-  Arising from use of the expression X.A
+  Arising from use of the expression A
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │                         ^^^
 fail_private.ml[11:10 ..11:34]: error
-  Type not in scope: `X.c`
+  Type not in scope: `c`
 
   Arising from use of the expression
-      ((((X.Y.a + X.b) + X.A)) : X.c)
+      ((((X.Y.a + X.b) + X.A)) : c)
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │          ^^^^^^^^^^^^^^^^^^^^^^^^^
 fail_private.ml[13:1 ..13:26]: error
-  Type not in scope: `X.d`
+  Type not in scope: `d`
 
   Arising from use of the declaration
-      instance () => X.d int begin
+      instance () => d int begin
         
       end
    │ 
 13 │ instance X.d int begin end
    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^
 fail_private.ml[13:1 ..13:26]: error
-  Type not in scope: `X.d`
+  Type not in scope: `d`
 
   Arising from use of the declaration
-      instance () => X.d int begin
+      instance () => d int begin
         
       end
    │ 

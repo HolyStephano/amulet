@@ -36,6 +36,8 @@ data TokenClass
   | TcThen -- ^ A @then@ token.
   | TcElse -- ^ An @else@ token.
   | TcBegin -- ^ A @begin@ token.
+  | TcStruct -- ^ A @struct@ token.
+  | TcSig -- ^ A @fun@ token.
   | TcEnd -- ^ An @end@ token.
   | TcIn -- ^ An @in@ token.
   | TcExternal -- ^ An @external@ token.
@@ -116,6 +118,8 @@ instance Show TokenClass where
   show TcThen = "then"
   show TcElse = "else"
   show TcBegin = "begin"
+  show TcStruct = "struct"
+  show TcSig = "sig"
   show TcEnd = "end"
   show TcIn = "in"
   show TcExternal = "external"

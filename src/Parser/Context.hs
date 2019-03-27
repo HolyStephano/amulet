@@ -290,9 +290,9 @@ handleContextBlock needsSep  tok@(Token tk tp te) c =
     -- Offside rule for modules
     (_, CtxModuleBody:ck) -> handleContext tok ck
 
-    -- @module ... = begin@ ~~> Push module + bracket
-    (TcBegin, CtxModuleBodyUnresolved mod:ck)
-      | spCol tp >= spCol mod
+    -- @module ... = sig|struct@ ~~> Push module + bracket
+    (tc, CtxModuleBodyUnresolved mod:ck)
+      | spCol tp >= spCol mod, tc == TcStruct || tc == TcSig
       -> pure ( Result tok Done
               , CtxEmptyBlock Nothing : CtxModuleBody : CtxBracket TcEnd : ck )
     -- @module ... = ?toplevel@ ~~> Add implicit begin and enter module.
@@ -397,7 +397,7 @@ handleContextBlock needsSep  tok@(Token tk tp te) c =
       , CtxEmptyBlock Nothing:c )
 
     -- @fun@ ~~> Push a fun context
-    (TcFun, _) -> pure (Result tok Done, CtxFun tp:c)
+    (TcFun, _) | not (isToplevel c) -> pure (Result tok Done, CtxFun tp:c)
     -- @fun ... ->@ ~~> Pop function and push block
     (TcArrow, CtxFun _:ck) -> pure
       ( Result tok Done
@@ -417,18 +417,27 @@ handleContextBlock needsSep  tok@(Token tk tp te) c =
     (TcModule, [CtxBlock{ blockEmpty = True }]) -> pure (Result tok Done, CtxModuleHead True tp:c)
 
     -- @module@ ~~> Push a module context
-    (TcModule, _) -> pure (Result tok Done, CtxModuleHead False (getMarginAt tp c):c)
+    (TcModule, CtxBlock{}:_) -> pure (Result tok Done, CtxModuleHead False (getMarginAt tp c):c)
     -- @class@ ~~> Push a class context
-    (TcClass, _) -> pure (Result tok Done, CtxClassHead (getMarginAt tp c):c)
+    (TcClass, CtxBlock{}:_) -> pure (Result tok Done, CtxClassHead (getMarginAt tp c):c)
     -- @instance@ ~~> Push an instance context
-    (TcInstance, _) -> pure (Result tok Done, CtxInstHead (getMarginAt tp c):c)
+    (TcInstance, CtxBlock{}:_) -> pure (Result tok Done, CtxInstHead (getMarginAt tp c):c)
     -- @type@ ~~> Push a type context
-    (TcType, _) -> pure (Result tok Done, CtxTypeHead tp:c)
+    (TcType, CtxBlock{}:_) -> pure (Result tok Done, CtxTypeHead tp:c)
 
     -- @begin ...@ ~~> CtxEmptyBlock : CtxBracket(end)
     (TcBegin, _) -> pure
       ( Result tok Done
       , CtxEmptyBlock Nothing:CtxBracket TcEnd:c)
+
+    -- @struct|sig ...@ ~~> CtxEmptyBlock : CtxBracket(end) : CtxModuleBody
+    (TcStruct, _) -> pure
+      ( Result tok Done
+      , CtxEmptyBlock Nothing:CtxBracket TcEnd:CtxModuleBody:c)
+    (TcSig, _) -> pure
+      ( Result tok Done
+      , CtxEmptyBlock Nothing:CtxBracket TcEnd:CtxModuleBody:c)
+
     -- @(@, @{@, @[@  ~~> CtxBracket()|}|])
     (TcOParen, _) -> pure (Result tok Done, CtxBracket TcCParen:c)
     (TcOBrace, _) -> pure (Result tok Done, CtxBracket TcCBrace:c)
@@ -526,6 +535,7 @@ isToplevel (CtxClassBody{}:_) = True
 isToplevel (CtxInstBody{}:_) = True
 isToplevel (CtxTypeHead{}:_) = True
 isToplevel (CtxTypeBody{}:_) = True
+isToplevel (CtxBracket TcEnd:CtxModuleBody:_) = True
 isToplevel (CtxBlock{}:cks) = isToplevel cks
 isToplevel _ = False
 

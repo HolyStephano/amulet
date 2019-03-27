@@ -36,4 +36,8 @@ fi
 
 echo "Loading ghci.."
 
-exec stack exec -- ghci $WARN -i./src/:./compiler/ ./compiler/Main.hs $@
+if [[ $1 == "lexer" ]]; then
+   stack exec -- ghci $WARN -i./src/:./compiler/ ./src/Parser/Main.hs
+else
+   stack exec -- ghci $WARN -i./src/:./compiler/ ./compiler/Main.hs $@
+fi
