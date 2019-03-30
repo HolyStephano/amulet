@@ -144,9 +144,9 @@ library
                      , Syntax.Verify.Pattern
                      -- Renamer
                      , Syntax.Resolve
-                     , Syntax.Resolve.Error
                      , Syntax.Resolve.Scope
                      -- TC
+                     , Types.Error
                      , Types.Infer
                      , Types.Kinds
                      , Types.Unify

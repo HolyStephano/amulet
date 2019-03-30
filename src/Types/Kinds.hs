@@ -151,7 +151,7 @@ inferKind :: MonadKind m => Type Desugared -> KindT m (Type Typed, Kind Typed)
 inferKind (TyCon v) = do
   x <- view (names . at v)
   case x of
-    Nothing -> confesses (NotInScope v)
+    Nothing -> confesses (NotInScope' v)
     Just k -> do
       (_, _, k) <- instantiate Strong Expression k
       pure (TyCon v, k)
@@ -159,7 +159,7 @@ inferKind (TyCon v) = do
 inferKind (TyPromotedCon v) = do
   x <- view (names . at v)
   case x of
-    Nothing -> confesses (NotInScope v)
+    Nothing -> confesses (NotInScope' v)
     Just k -> do
       (_, _, k) <- instantiate Strong Expression k
       case promoteOrError k of
@@ -170,7 +170,7 @@ inferKind (TyOperator left op right) = do
   reason <- get
   kind <- view (names . at op)
   ty <- case kind of
-    Nothing -> confesses (NotInScope op)
+    Nothing -> confesses (NotInScope' op)
     Just k ->
       view _3 <$> instantiate Strong Expression k
 

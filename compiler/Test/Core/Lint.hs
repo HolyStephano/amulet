@@ -15,7 +15,7 @@ import Control.Monad.Namey
 
 import Types.Infer (inferProgram)
 
-import Syntax.Resolve (ResolveError, resolveProgram)
+import Syntax.Resolve (resolveProgram)
 import Syntax.Desugar (desugarProgram)
 import Syntax.Builtin
 
@@ -39,7 +39,6 @@ import System.Directory
 data CompileResult
   = CSuccess [Stmt CoVar]
   | CParse   [ParseError]
-  | CResolve [ResolveError]
   | CInfer   [TypeError]
 
 toEither :: These [a] b -> Either [a] b
@@ -69,7 +68,7 @@ compile (file:files) = do
               case infered of
                 Right (prog, env') -> pure $ Right (tops ++ prog, scope', env')
                 Left es -> pure $ Left $ CInfer es
-            Left es -> pure $ Left $ CResolve es
+            Left es -> pure $ Left $ CInfer es
         (Nothing, es) -> pure $ Left $ CParse es
     go x _ = pure x
 
@@ -86,7 +85,6 @@ testLint f file = do
           Nothing -> pure $ pure ()
           Just (_, es) -> pure $ assertFailure $ "Core lint failed: " ++ displayS (pretty es)
       CParse es -> pure $ assertFailure $ displayS $ vsep $ map (\e -> string "Parse error: " <+> pretty e <+> " at " <+> pretty (annotation e)) es
-      CResolve e -> pure $ assertFailure $ "Resolution error: " ++ displayS (pretty e)
       CInfer e -> pure $ assertFailure $ "Type error: " ++ displayS (pretty e)
 
 testLintLower, testLintSimplify :: String -> Assertion

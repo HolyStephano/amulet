@@ -22,7 +22,7 @@
 -}
 module Syntax.Resolve
   ( resolveProgram
-  , ResolveError(..)
+  , TypeError(..)
   , VarKind(..)
   ) where
 
@@ -47,13 +47,13 @@ import Data.These
 import Data.List
 
 import Syntax.Resolve.Scope
-import Syntax.Resolve.Error
+import Types.Error
 import Syntax.Subst
 import Syntax
 
 import Parser.Unicode
 
-type MonadResolve m = ( MonadChronicles ResolveError m
+type MonadResolve m = ( MonadChronicles TypeError m
                       , MonadReader Context m
                       , MonadNamey m )
 
@@ -63,7 +63,7 @@ resolveProgram :: MonadNamey m
                -- ^ The current module scope. We return an updated
                -- version of this if we declare or extend any modules.
                -> [Toplevel Parsed] -- ^ The program to resolve
-               -> m (Either [ResolveError] ([Toplevel Resolved], Environment))
+               -> m (Either [TypeError] ([Toplevel Resolved], Environment))
                -- ^ The resolved program or a list of resolution errors
 resolveProgram scope = runResolve scope
                      . flip resolveToplevel scope
@@ -71,8 +71,8 @@ resolveProgram scope = runResolve scope
 -- | Run the resolver monad.
 runResolve :: MonadNamey m
            => Environment -- ^ The initial state to resolve objects in
-           -> ReaderT Context (ChronicleT (Seq ResolveError) m) a
-           -> m (Either [ResolveError] a)
+           -> ReaderT Context (ChronicleT (Seq TypeError) m) a
+           -> m (Either [TypeError] a)
 runResolve scope
   = (these (Left . toList) Right (\x _ -> Left (toList x))<$>)
   . runChronicleT . flip runReaderT (Context scope mempty)
@@ -449,7 +449,7 @@ junkVar = TgInternal "<missing>"
 junkExpr :: Ann Resolved -> Expr Resolved
 junkExpr = VarRef junkVar
 
-wrapError :: Reasonable e p => e p -> ResolveError -> ResolveError
+wrapError :: Reasonable e p => e p -> TypeError -> TypeError
 wrapError _  e@(ArisingFrom _ _) = e
 wrapError r e = ArisingFrom e (BecauseOf r)
 

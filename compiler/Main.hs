@@ -21,7 +21,7 @@ import Backend.Lua
 
 import Types.Infer (inferProgram)
 
-import Syntax.Resolve (ResolveError, resolveProgram)
+import Syntax.Resolve (resolveProgram)
 import Syntax.Desugar (desugarProgram)
 import qualified Syntax.Builtin as Bi
 import Syntax.Verify
@@ -50,7 +50,6 @@ import Repl
 data CompileResult
   = CSuccess [VerifyError] [TypeError] [Toplevel Typed] [Stmt CoVar] [Stmt CoVar] LuaStmt Env
   | CParse   [ParseError]
-  | CResolve [ResolveError]
   | CInfer   [TypeError]
 
 
@@ -108,7 +107,7 @@ compile opt (file:files) =
                                , scope'
                                , env' )
                 This e -> pure $ Left $ CInfer e
-            Left e -> pure $ Left $ CResolve e
+            Left e -> pure $ Left $ CInfer e
         (Nothing, es) -> pure $ Left $ CParse es
     go x _ = pure x
 
@@ -127,7 +126,6 @@ compileFromTo opt dbg fs emit =
          then pure ()
          else emit lua
     CParse es -> traverse_ (`reportS` fs) es
-    CResolve es -> traverse_ (`reportS` fs) es
     CInfer es -> traverse_ (`reportS` fs) es
 
 test :: DoOptimise -> D.DebugMode
@@ -144,7 +142,6 @@ test opt mode fs =
 
       pure (pure (core, env))
     CParse es -> Nothing <$ traverse_ (`reportS` fs) es
-    CResolve es -> Nothing <$ traverse_ (`reportS` fs) es
     CInfer es -> Nothing <$ traverse_ (`reportS` fs) es
 
 data DoOptimise = Do | Don't
