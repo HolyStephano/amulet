@@ -1,4 +1,4 @@
-fail_malformed_class_name.ml[1:7 ..1:12]: error
+fail_malformed_class_name.ml[1:7..1:12]: error
   Malformed class declaration a -> b
   │ 
 1 │ class a -> b begin end

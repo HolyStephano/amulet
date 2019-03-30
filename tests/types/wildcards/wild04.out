@@ -1,4 +1,4 @@
-wild04.ml[2:9 ..2:9]: error
+wild04.ml[2:9..2:9]: error
   │ 
 2 │ let y = x ^ ""
   │         ^

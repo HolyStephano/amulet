@@ -8,10 +8,10 @@ do
       elseif dh == 3 then
         return "bar"
       else
-        return error("Pattern matching failure in match expression at match_heuristic.ml[2:21 ..2:28]")
+        return error("Pattern matching failure in match expression at match_heuristic.ml[2:21..2:28]")
       end
     else
-      return error("Pattern matching failure in match expression at match_heuristic.ml[2:21 ..2:28]")
+      return error("Pattern matching failure in match expression at match_heuristic.ml[2:21..2:28]")
     end
   end
   local function common_suffix(g)
@@ -23,10 +23,10 @@ do
       elseif dl == 3 then
         return "bar"
       else
-        return error("Pattern matching failure in match expression at match_heuristic.ml[6:21 ..6:28]")
+        return error("Pattern matching failure in match expression at match_heuristic.ml[6:21..6:28]")
       end
     else
-      return error("Pattern matching failure in match expression at match_heuristic.ml[6:21 ..6:28]")
+      return error("Pattern matching failure in match expression at match_heuristic.ml[6:21..6:28]")
     end
   end
   local function mixed_1(h)
@@ -39,7 +39,7 @@ do
         if ds.__tag == "Cons" then
           return 3
         else
-          return error("Pattern matching failure in match expression at match_heuristic.ml[11:15 ..11:22]")
+          return error("Pattern matching failure in match expression at match_heuristic.ml[11:15..11:22]")
         end
       end
     else
@@ -47,7 +47,7 @@ do
         if dt == 2 then
           return 2
         else
-          return error("Pattern matching failure in match expression at match_heuristic.ml[11:15 ..11:22]")
+          return error("Pattern matching failure in match expression at match_heuristic.ml[11:15..11:22]")
         end
       elseif ds.__tag == "Cons" then
         return 3

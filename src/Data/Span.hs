@@ -77,7 +77,7 @@ formatSpan Span { fileName = n
               , line1 = l1, col1 = c1
               , line2 = l2, col2 = c2 }
     | n == "<wired in>" = string "internal"
-    | otherwise = string n <> brackets (int l1 <> colon <> int c1 <+> string ".." <> int l2 <> colon <> int c2)
+    | otherwise = string n <> brackets (int l1 <> colon <> int c1 <> string ".." <> int l2 <> colon <> int c2)
 
 instance Pretty Span where
   pretty = formatSpan

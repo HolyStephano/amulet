@@ -1,20 +1,20 @@
-fail_unresolved.ml[6:3 ..6:7]: error
-  Variable not in scope: `foo_0`
+fail_unresolved.ml[6:3..6:7]: error
   │ 
 6 │   foo_0
   │   ^^^^^
-fail_unresolved.ml[13:9 ..13:18]: error
-  Type not in scope: `foo_0`
+  Variable not in scope: `foo_0`
+fail_unresolved.ml[13:9..13:18]: error
    │ 
 13 │ let _ : foo_0 = ()
    │         ^^^^^^^^^^
-fail_unresolved.ml[18:9 ..18:12]: error
-  Constructor not in scope: `Foo0`
+  Type not in scope: `foo_0`
+fail_unresolved.ml[18:9..18:12]: error
    │ 
 18 │ let _ = Foo0
    │         ^^^^
-fail_unresolved.ml[21:9 ..21:54]: error
-  Type variable not in scope: `foo_0`
+  Constructor not in scope: `Foo0`
+fail_unresolved.ml[21:9..21:54]: error
    │ 
 21 │ let _ : forall 'foo_1 'foo_2 'bar_0. () -> 'foo_0 = ()
    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  Type variable not in scope: `foo_0`

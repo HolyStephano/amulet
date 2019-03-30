@@ -1,4 +1,4 @@
-err01.ml[8:11 ..8:12]: error
+err01.ml[8:11..8:12]: error
   │ 
 8 │   enqueue go (start, stop)
   │           ^^

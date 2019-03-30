@@ -1,4 +1,4 @@
-fail_term.ml[16:3 ..16:30]: error
+fail_term.ml[16:3..16:30]: error
   Could not match the rigid type variable 'b with the type 'a
 
   • Arising in this expression

@@ -1,4 +1,4 @@
-vta-fail02.ml[2:9 ..2:15]: error
+vta-fail02.ml[2:9..2:15]: error
   │ 
 2 │ let _ = id @int
   │         ^^^^^^^

@@ -1,4 +1,4 @@
-begin_discard.ml[2:3 ..2:7]: warning
+begin_discard.ml[2:3..2:7]: warning
   This statement discards a value of type
     int
 
@@ -7,7 +7,7 @@ begin_discard.ml[2:3 ..2:7]: warning
   │ 
 2 │   1 + 2
   │   ^^^^^
-begin_discard.ml[3:3 ..3:7]: warning
+begin_discard.ml[3:3..3:7]: warning
   This statement discards a value of type
     int
 
@@ -16,7 +16,7 @@ begin_discard.ml[3:3 ..3:7]: warning
   │ 
 3 │   2 + 3
   │   ^^^^^
-begin_discard.ml[4:3 ..4:7]: warning
+begin_discard.ml[4:3..4:7]: warning
   This statement discards a value of type
     int
 

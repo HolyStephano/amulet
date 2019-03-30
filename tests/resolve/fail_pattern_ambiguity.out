@@ -1,14 +1,14 @@
-fail_pattern_ambiguity.ml[2:3 ..2:8]: error
+fail_pattern_ambiguity.ml[2:3..2:8]: error
   Non-linear pattern (multiple definitions of `a#1` )
   │ 
 2 │ | (a, a) -> a + a
   │    ^  ^
-fail_pattern_ambiguity.ml[2:13 ..2:13]: error
+fail_pattern_ambiguity.ml[2:13..2:13]: error
   │ 
 2 │ | (a, a) -> a + a
   │             ^
   Ambiguous reference to variable: `a`
-fail_pattern_ambiguity.ml[2:17 ..2:17]: error
+fail_pattern_ambiguity.ml[2:17..2:17]: error
   │ 
 2 │ | (a, a) -> a + a
   │                 ^

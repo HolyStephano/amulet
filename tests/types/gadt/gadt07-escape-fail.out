@@ -1,4 +1,4 @@
-gadt07-escape-fail.ml[10:3 ..10:17]: error
+gadt07-escape-fail.ml[10:3..10:17]: error
   Could not match the rigid type variable 'a with the type int
 
   Where the type variable a is an existential,

@@ -1,4 +1,4 @@
-gadt03-fail.ml[7:12 ..7:19]: error
+gadt03-fail.ml[7:12..7:19]: error
   │ 
 7 │ let show = function
   │            ^^^^^^^^

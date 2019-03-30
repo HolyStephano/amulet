@@ -1,4 +1,4 @@
-sharing01.ml[3:5 ..3:5]: warning
+sharing01.ml[3:5..3:5]: warning
   Polymorphic values are not shared
   │ 
 3 │ let x = ref None

@@ -1,4 +1,4 @@
-nasty_cycle.ml[18:19 ..18:33]: error
+nasty_cycle.ml[18:19..18:33]: error
    │ 
 18 │       | Left p -> Right (Even2 p)
    │                   ^^^^^^^^^^^^^^^
@@ -7,7 +7,7 @@ nasty_cycle.ml[18:19 ..18:33]: error
   • Note: all solutions to
       's ~ S 's
     are infinite.
-nasty_cycle.ml[19:20 ..19:25]: error
+nasty_cycle.ml[19:20..19:25]: error
    │ 
 19 │       | Right p -> Left p
    │                    ^^^^^^

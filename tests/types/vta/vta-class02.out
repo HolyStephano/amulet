@@ -1,4 +1,4 @@
-vta-class02.ml[12:9 ..12:21]: error
+vta-class02.ml[12:9..12:21]: error
    │ 
 12 │ let 0 = size @_ @unit
    │         ^^^^^^^^^^^^^
