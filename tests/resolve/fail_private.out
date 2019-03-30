@@ -2,29 +2,29 @@ fail_private.ml[11:11..11:15]: error
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │           ^^^^^
-  Module not in scope: `Y`
+  Module Y not in scope
 fail_private.ml[11:19..11:21]: error
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │                   ^^^
-  Variable not in scope: `b`
+  Variable b not in scope
 fail_private.ml[11:25..11:27]: error
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │                         ^^^
-  Constructor not in scope: `A`
+  Constructor A not in scope
 fail_private.ml[11:10..11:34]: error
    │ 
 11 │ let () = (X.Y.a + X.b + X.A) : X.c
    │          ^^^^^^^^^^^^^^^^^^^^^^^^^
-  Type not in scope: `c`
+  Type c not in scope
 fail_private.ml[13:1..13:26]: error
    │ 
 13 │ instance X.d int begin end
    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Type not in scope: `d`
+  Type d not in scope
 fail_private.ml[13:1..13:26]: error
    │ 
 13 │ instance X.d int begin end
    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Type not in scope: `d`
+  Type d not in scope

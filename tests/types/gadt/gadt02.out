@@ -2,7 +2,7 @@ gadt02.ml[7:5..7:26]: error
   │ 
 7 │   | K2 : t2 int -> t2 bool
   │     ^^^^^^^^^^^^^^^^^^^^^^
-  The type `t2 int -> t2 bool` is malformed.
+  The type t2 int -> t2 bool is malformed.
   • Note: The type t2 bool
       is not an instance of the type being declared
   • Note: It must end in an application like t1 'a

@@ -64,7 +64,7 @@ lookupTy x = do
   rs <- view (names . at x)
   case rs of
     Just t -> thd3 <$> instantiate Strong Expression t
-    Nothing -> confesses (NotInScope' x)
+    Nothing -> error ("variable " ++ show x ++ " passed Rn but wasn't found by Tc")
 
 lookupTy' :: (MonadChronicles TypeError m, MonadReader Env m, MonadNamey m)
           => InstLevel -> Var Desugared
@@ -73,7 +73,7 @@ lookupTy' str x = do
   rs <- view (names . at x)
   case rs of
     Just t -> instantiate str Expression t
-    Nothing -> confesses (NotInScope' x)
+    Nothing -> error ("variable " ++ show x ++ " passed Rn but wasn't found by Tc")
 
 runInfer :: MonadNamey m
          => Env

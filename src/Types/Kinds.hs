@@ -151,7 +151,7 @@ inferKind :: MonadKind m => Type Desugared -> KindT m (Type Typed, Kind Typed)
 inferKind (TyCon v) = do
   x <- view (names . at v)
   case x of
-    Nothing -> confesses (NotInScope' v)
+    Nothing -> error ("variable " ++ show v ++ " passed Rn but wasn't found by Tc")
     Just k -> do
       (_, _, k) <- instantiate Strong Expression k
       pure (TyCon v, k)
@@ -159,7 +159,7 @@ inferKind (TyCon v) = do
 inferKind (TyPromotedCon v) = do
   x <- view (names . at v)
   case x of
-    Nothing -> confesses (NotInScope' v)
+    Nothing -> error ("variable " ++ show v ++ " passed Rn but wasn't found by Tc")
     Just k -> do
       (_, _, k) <- instantiate Strong Expression k
       case promoteOrError k of
@@ -170,7 +170,7 @@ inferKind (TyOperator left op right) = do
   reason <- get
   kind <- view (names . at op)
   ty <- case kind of
-    Nothing -> confesses (NotInScope' op)
+    Nothing -> error ("variable " ++ show op ++ " passed Rn but wasn't found by Tc")
     Just k ->
       view _3 <$> instantiate Strong Expression k
 

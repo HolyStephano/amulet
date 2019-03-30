@@ -2,4 +2,4 @@ fail_modules.ml[4:9..4:9]: error
   │ 
 4 │ let y = x
   │         ^
-  Variable not in scope: `x`
+  Variable x not in scope

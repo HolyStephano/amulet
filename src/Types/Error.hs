@@ -52,8 +52,6 @@ data TypeError where
 
   NotInScope :: VarKind -> Var Parsed -> [Var Parsed] -> TypeError
   -- ^ This object was not in scope
-  NotInScope' :: Var Desugared -> TypeError
-  -- ^ The type checker could not find the variable. This is a problematic error.
   Ambiguous :: Var Parsed -> [Var Resolved] -> TypeError
   -- ^ This reference could refer to more than one variable
   NonLinearPattern :: Var Resolved -> [Pattern Resolved] -> TypeError
@@ -83,12 +81,12 @@ data TypeError where
   Note :: (Pretty x, Typeable x) => TypeError -> x -> TypeError
   Suggestion :: Pretty x => TypeError -> x -> TypeError
 
-  CanNotInstance :: Pretty (Var p)
+  CanNotInstance :: (Pretty (Var p), Ord (Var p))
                  => Type p {- record type -}
                  -> Type p {- instance -}
                  -> TypeError
 
-  Malformed :: Pretty (Var p) => Type p -> TypeError
+  Malformed :: (Pretty (Var p), Ord (Var p)) => Type p -> TypeError
 
   -- Implicit parameters
   AmbiguousType :: (Ord (Var p), Pretty (Var p)) => Var p -> Type p -> Set.Set (Var p) -> TypeError
@@ -194,12 +192,14 @@ instance Pretty TypeError where
       describe TyType = "type constructor"
       describe _ = "function"
 
-  pretty (NotInScope k e _) = pretty k <+> "not in scope:" <+> verbatim e
-  pretty (NotInScope' e) = string "Variable not in scope:" <+> pretty e
+  pretty (NotInScope k e _) = pretty k <+> stypeSkol (pretty e) <+> "not in scope"
 
-  pretty (Ambiguous v _) = "Ambiguous reference to variable:" <+> verbatim v
-  pretty (NonLinearPattern v _) = "Non-linear pattern (multiple definitions of" <+> verbatim v <+> ")"
-  pretty (NonLinearRecord _ t) = "Duplicate field" <+> stypeSkol (text t) <+> "in record" <#> empty
+  pretty (Ambiguous v _) = "Ambiguous reference to variable" <+> stypeSkol (pretty v)
+  pretty (NonLinearPattern v _) = vsep
+    [ "This pattern is not linear:"
+    , "It has multiple declarations of" <+> stypeSkol (pretty v)
+    ]
+  pretty (NonLinearRecord _ t) = "Duplicate field" <+> stypeSkol (text t) <+> "in record"
 
   pretty EmptyMatch = "Empty match expression"
   pretty EmptyBegin = "Empty begin expression"
@@ -212,8 +212,8 @@ instance Pretty TypeError where
   pretty (Suggestion te m) = pretty te <#> bullet (string "Suggestion:") <+> align (pretty m)
   pretty (CanNotInstance rec new) =
     string "Can not instance hole of record type"
-    <+> align (verbatim rec </> string " to type " <+> verbatim new)
-  pretty (Malformed tp) = string "The type" <+> verbatim tp <+> string "is malformed."
+    <+> align (displayType rec </> string " to type " <+> displayType new)
+  pretty (Malformed tp) = string "The type" <+> displayType tp <+> string "is malformed."
 
   pretty (NoOverlap ta tb)
     | TyExactRows ra <- ta
