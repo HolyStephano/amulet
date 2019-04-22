@@ -67,10 +67,30 @@ verifyProgram = traverse_ verifyStmt where
       Left e -> tell (Seq.singleton (ParseErrorInForeign st e))
       Right _ -> pure ()
     parametricity st t
-
+  verifyStmt (SigBind _ _ mod) = verifyModType mod
+  verifyStmt (Module _ _ mod) = verifyModTerm mod
+  verifyStmt (Open _ mod) = verifyModTerm mod
   verifyStmt TypeDecl{} = pure ()
-  -- verifyStmt (Module _ _ p) = verifyProgram p
-  -- verifyStmt Open{} = pure ()
+
+-- | Verify a top-level declaration
+verifyTopSpec :: MonadVerify m => TopSpec Typed -> m ()
+verifyTopSpec ValSig{} = pure ()
+verifyTopSpec TypeSig{} = pure ()
+verifyTopSpec (ModuleSig _ ty) = verifyModType ty
+
+-- | Verify a module type
+verifyModType :: MonadVerify m => ModuleType Typed -> m ()
+verifyModType (Signature xs) = traverse_ verifyTopSpec xs
+verifyModType (Functor _ f x) = verifyModType f >> verifyModType x
+verifyModType SigRef{} = pure ()
+
+-- | Verify a module term
+verifyModTerm :: MonadVerify m => ModuleTerm Typed -> m ()
+verifyModTerm ModName{} = pure ()
+verifyModTerm (ModStruct xs) = verifyProgram xs
+verifyModTerm (ModFun _ a x) = verifyModType a >> verifyModTerm x
+verifyModTerm (ModApply f x) = verifyModTerm f >> verifyModTerm x
+verifyModTerm (ModConstraint x t) = verifyModTerm x >> verifyModType t
 
 -- | Verify a recursive definition is well-formed
 verifyBindingGroup :: MonadVerify m
