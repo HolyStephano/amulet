@@ -5,6 +5,8 @@ module Language.Lua.Syntax
   , LuaExpr(..)
   , LuaCall(..)
   , keywords
+  , Precedence(..), Associativity(..), assocOf, precedenceOf
+  , decrPrec
   ) where
 
 import Text.Pretty.Semantic

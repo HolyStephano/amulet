@@ -66,6 +66,7 @@ import Control.Lens
 import qualified Backend.Lua.Postprocess as B
 import qualified Backend.Lua.Emit as B
 import qualified Backend.Escape as B
+import qualified Backend.JS as B
 import Language.Lua.Syntax
 
 import Text.Pretty.Semantic
@@ -233,6 +234,7 @@ runRepl = do
         Nothing -> pure False
         Just (vs, prog, core, state') -> do
           let (emit', luaExpr, luaSyntax) = emitCore state' core
+          liftIO . putDoc . B.stmtJS $ luaExpr
           ok <- liftIO $ do
             dump (debugMode state') prog core core luaExpr (inferScope state) (inferScope state')
 
