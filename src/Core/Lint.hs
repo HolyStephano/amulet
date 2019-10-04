@@ -392,7 +392,8 @@ checkCoercion s = checkCo where
   coAxT x = error (show x)
 
   checkCoAx _ (coAxT -> ts) args =
-    (\() -> last ts)
+    (const (VarTy (fromVar tyvarA), snd (last ts)))
+    -- TODO: This is quite sad. Can we fix it? See lint/tyfun-unsat.ml
       <$> traverse_ checkCo' (zip ts args)
   checkCo' ((a, b), co) = (\(l, r) -> if (a `apart` l) || (b `apart` r) then pushError (InvalidCoercion co) else pure ())
     <$> checkCo co

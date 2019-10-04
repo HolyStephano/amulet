@@ -700,8 +700,8 @@ unifyTyFunApp TySymInfo{} _ _ _ = undefined
 unifyTyFunApp ti@(TyFamInfo tn _ _ _)   scope args tb@(TyApps (TyCon tn') args') | tn == tn' = do
   x <- memento $ foldl AppCo (ReflCo (TyCon tn)) <$> traverse (uncurry (unify scope)) (zip args args')
   case x of
-    Left _ -> traceM ("   Solving by evaluation") *> unifyTyFunApp' ti scope args tb
-    Right x -> traceM ("   Solved by purity") *> pure x
+    Left _ -> unifyTyFunApp' ti scope args tb
+    Right x -> pure x
 unifyTyFunApp ti scope args tb = unifyTyFunApp' ti scope args tb
 
 unifyTyFunApp' info scope args tb = do
@@ -1110,7 +1110,7 @@ applicable wanted scp (ImplChoice head _ cs _ s _ _) =
 
 
 probablyCast :: Coercion Typed -> Wrapper Typed
-probablyCast x = Cast x
+probablyCast = Cast
 
 rethrow :: MonadSolve m => Type Typed -> Type Typed -> m a -> m a
 rethrow l r cont =
